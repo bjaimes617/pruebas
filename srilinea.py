@@ -17,536 +17,311 @@ import urllib.parse
 st.set_page_config(page_title="RAPIDITO AI - Portal Contable", layout="wide", page_icon="📊")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- ENLACES DE CONEXIÓN ---
+# ENLACES DE CONEXIÓN
 URL_WS = "https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl"
 HEADERS_WS = {"Content-Type": "text/xml;charset=UTF-8","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"}
-
-# El CSV de lectura (Respaldo)
-URL_SHEET = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkIGy-ovamvkCQjnjuT9kV7BndRqOeZlrEUEy9BZUH-oGISXG2a_own9BMbzTV21giZXgBqGxlTjkp/pub?output=csv"
-
-# ⚠️ PEGA AQUÍ LA URL DE TU GOOGLE APPS SCRIPT (Termina en /exec)
 URL_API_VIRAL = "https://script.google.com/macros/s/AKfycbz3vRq203m7vcdor30hJiXuAGNGr8n_kM2dCpf63LW4KhaeY9wqAijBC473AwywYes/exec" 
 
-# --- CONEXIÓN AL CEREBRO VIRAL (Google Apps Script) ---
+# --- CONEXIÓN AL CEREBRO VIRAL ---
 def conectar_api(payload):
-    """Función para hablar con Google Sheets (Login e Invitaciones)"""
     try:
-        # Si la URL no está configurada, retornamos error simulado
-        if "TU_URL" in URL_API_VIRAL: 
-            return {"exito": False, "mensaje": "Falta configurar URL_API_VIRAL en el código."}
-        
+        if "TU_URL" in URL_API_VIRAL: return {"exito": False, "mensaje": "Falta URL API"}
         r = requests.post(URL_API_VIRAL, json=payload, timeout=10)
         return r.json()
-    except Exception as e:
-        return {"exito": False, "mensaje": f"Error de conexión: {str(e)}"}
+    except: return {"exito": False, "mensaje": "Error de conexión."}
 
-# --- LOGGING Y SUGERENCIAS (Legacy) ---
 def registrar_actividad(usuario, accion, cantidad=None, sugerencia=None):
     URL_LOGGING = "https://script.google.com/macros/s/AKfycbyk0CWehcUec47HTGMjqsCs0sTKa_9J3ZU_Su7aRxfwmNa76-dremthTuTPf-FswZY/exec"
-    detalle_accion = f"{accion} ({cantidad} XMLs)" if cantidad is not None else accion
-    payload = {"usuario": str(usuario), "accion": str(detalle_accion)}
+    detalle = f"{accion} ({cantidad} XMLs)" if cantidad is not None else accion
+    payload = {"usuario": str(usuario), "accion": str(detalle)}
     if sugerencia: payload["sugerencia"] = str(sugerencia)
-    try: 
-        requests.post(URL_LOGGING, json=payload, timeout=5)
-        return True
+    try: requests.post(URL_LOGGING, json=payload, timeout=5); return True
     except: return False
 
-# --- 2. SISTEMA DE LOGIN VIRAL Y ESTADO ---
+# --- 2. SISTEMA DE LOGIN Y ESTADO ---
 if "autenticado" not in st.session_state: st.session_state.autenticado = False
 if "id_proceso" not in st.session_state: st.session_state.id_proceso = 0
 if "data_compras_cache" not in st.session_state: st.session_state.data_compras_cache = []
 if "data_ventas_cache" not in st.session_state: st.session_state.data_ventas_cache = []
 if "invitaciones_disponibles" not in st.session_state: st.session_state.invitaciones_disponibles = 0
 
+# Cache para descargas SRI para que no desaparezcan los botones
+if "sri_results" not in st.session_state: st.session_state.sri_results = {}
+
 if not st.session_state.autenticado:
     st.sidebar.title("🔐 Acceso RAPIDITO")
-    st.sidebar.markdown("---")
-    user = st.sidebar.text_input("Usuario (Email)")
-    password = st.sidebar.text_input("Contraseña", type="password")
-    
-    if st.sidebar.button("Iniciar Sesión"):
-        with st.spinner("Verificando credenciales..."):
-            resp = conectar_api({"accion": "LOGIN", "usuario": user.strip(), "clave": password.strip()})
-            
-            if resp.get("exito"):
-                st.session_state.autenticado = True
-                st.session_state.usuario_actual = user.strip()
-                st.session_state.invitaciones_disponibles = resp.get("invitaciones", 0)
-                registrar_actividad(user, "ENTRÓ AL PORTAL")
-                st.rerun()
-            else:
-                st.sidebar.error(f"Error: {resp.get('mensaje', 'Credenciales incorrectas')}")
-    
-    st.sidebar.markdown("---")
-    st.sidebar.info("ℹ️ Este sistema es exclusivo por invitación. Pídele acceso a un colega contador.")
+    u, p = st.sidebar.text_input("Usuario"), st.sidebar.text_input("Clave", type="password")
+    if st.sidebar.button("Entrar"):
+        resp = conectar_api({"accion": "LOGIN", "usuario": u.strip(), "clave": p.strip()})
+        if resp.get("exito"):
+            st.session_state.autenticado, st.session_state.usuario_actual = True, u.strip()
+            st.session_state.invitaciones_disponibles = resp.get("invitaciones", 0)
+            registrar_actividad(u, "LOGIN"); st.rerun()
+        else: st.sidebar.error("Error de acceso")
     st.stop()
 
-# --- 3. MEMORIA DE APRENDIZAJE ---
+# --- 3. MEMORIA JSON ---
 if 'memoria' not in st.session_state:
-    archivo_memoria = "conocimiento_contable.json"
-    if os.path.exists(archivo_memoria):
-        with open(archivo_memoria, "r", encoding="utf-8") as f: st.session_state.memoria = json.load(f)
+    if os.path.exists("conocimiento_contable.json"):
+        with open("conocimiento_contable.json", "r", encoding="utf-8") as f: st.session_state.memoria = json.load(f)
     else: st.session_state.memoria = {"empresas": {}}
 
 def guardar_memoria():
     with open("conocimiento_contable.json", "w", encoding="utf-8") as f: json.dump(st.session_state.memoria, f, indent=4, ensure_ascii=False)
 
-# --- HELPER: DESCOMPRIMIR ZIP Y XMLs ---
-def procesar_archivos_entrada(lista_archivos):
-    xmls_procesables = []
-    for file in lista_archivos:
-        if file.name.lower().endswith('.xml'):
-            xmls_procesables.append(io.BytesIO(file.getvalue()))
-        elif file.name.lower().endswith('.zip'):
-            try:
-                with zipfile.ZipFile(file) as z:
-                    for filename in z.namelist():
-                        if filename.lower().endswith('.xml') and not filename.startswith('__MACOSX'):
-                            xmls_procesables.append(io.BytesIO(z.read(filename)))
-            except: pass
-    return xmls_procesables
+def procesar_archivos_entrada(lista):
+    xmls = []
+    for f in lista:
+        if f.name.lower().endswith('.xml'): xmls.append(io.BytesIO(f.getvalue()))
+        elif f.name.lower().endswith('.zip'):
+            with zipfile.ZipFile(f) as z:
+                for n in z.namelist():
+                    if n.lower().endswith('.xml') and not n.startswith('__MACOSX'): xmls.append(io.BytesIO(z.read(n)))
+    return xmls
 
-# --- 4. MOTOR DE EXTRACCIÓN XML (VERSION BLINDADA V2) ---
+# --- 4. MOTOR DE EXTRACCIÓN (LÓGICA 10 DÍGITOS) ---
 def extraer_datos_robusto(xml_file):
     try:
-        if isinstance(xml_file, (io.BytesIO, io.StringIO)): xml_file.seek(0)
-        tree = ET.parse(xml_file)
-        root = tree.getroot()
-        xml_data = None
-        
+        xml_file.seek(0); tree = ET.parse(xml_file); root = tree.getroot(); xml_data = None
         for elem in root.iter():
-            if 'comprobante' in elem.tag.lower() and elem.text and ("<" in elem.text or "&lt;" in elem.text):
-                try:
-                    clean_text = re.sub(r'<\?xml.*?\?>', '', elem.text).strip()
-                    xml_data = ET.fromstring(clean_text)
-                    break
-                except: continue
-        
+            if 'comprobante' in elem.tag.lower() and elem.text and "<" in elem.text:
+                xml_data = ET.fromstring(re.sub(r'<\?xml.*?\?>', '', elem.text).strip()); break
         if xml_data is None: xml_data = root
-
-        root_tag = xml_data.tag.lower()
-        if 'notacredito' in root_tag: tipo_doc = "NC"
-        elif 'comprobanteretencion' in root_tag: tipo_doc = "RET"
-        elif 'liquidacioncompra' in root_tag: tipo_doc = "LC"
-        else: tipo_doc = "FC" 
 
         def buscar(tags):
             for t in tags:
                 f = xml_data.find(f".//{t}")
                 if f is not None and f.text: return f.text.strip()
             return ""
-            
-        def buscar_float(tags):
-            val_str = buscar(tags)
-            try: return float(val_str) if val_str else 0.0
-            except: return 0.0
 
+        tipo = "NC" if "notacredito" in xml_data.tag.lower() else "RET" if "retencion" in xml_data.tag.lower() else "FC"
         razon_social = buscar(["razonSocial"]).upper()
         ruc_emisor = buscar(["ruc"])
-        
-        estab = buscar(["estab"]) or "000"
-        pto = buscar(["ptoEmi"]) or "000"
-        sec = buscar(["secuencial"]) or "000000000"
-        num_fact_completo = f"{estab}-{pto}-{sec}"
-        
-        fecha_emision = buscar(["fechaEmision"])
-        num_autori = buscar(["numeroAutorizacion"]) or buscar(["claveAcceso"])
-        
-        mes_nombre = "DESCONOCIDO"
-        if "/" in fecha_emision:
-            try:
-                meses_dict = {"01":"ENERO","02":"FEBRERO","03":"MARZO","04":"ABRIL","05":"MAYO","06":"JUNIO","07":"JULIO","08":"AGOSTO","09":"SEPTIEMBRE","10":"OCTUBRE","11":"NOVIEMBRE","12":"DICIEMBRE"}
-                mes_nombre = meses_dict.get(fecha_emision.split('/')[1], "DESCONOCIDO")
-            except: pass
+        num_fact = f"{buscar(['estab']) or '000'}-{buscar(['ptoEmi']) or '000'}-{buscar(['secuencial']) or '000'}"
+        fecha = buscar(["fechaEmision"])
+        ruc_cli = buscar(["identificacionComprador", "identificacionSujetoRetenido"])
+        nom_cli = buscar(["razonSocialComprador", "razonSocialSujetoRetenido"]).upper()
 
-        ruc_cliente = buscar(["identificacionComprador", "identificacionSujetoRetenido"])
-        nombre_cliente = buscar(["razonSocialComprador", "razonSocialSujetoRetenido"]).upper()
-
-        # --- LÓGICA DE CLASIFICACIÓN 10 VS 13 DÍGITOS ---
-        len_id = len(ruc_cliente)
+        # CLASIFICACIÓN 10 VS 13 DÍGITOS
+        len_id = len(ruc_cli)
         info_json = st.session_state.memoria["empresas"].get(razon_social)
-
-        if tipo_doc == "NC":
-            detalle_final, memo_final = "", ""
-        elif len_id == 10:
+        
+        if len_id == 10:
             memo_final = "PERSONAL"
-            # Si está en el JSON, usa la categoría guardada; si no, No Deducible.
-            detalle_final = info_json.get("DETALLE", "No Deducible") if info_json else "No Deducible"
+            detalle_final = info_json["DETALLE"] if info_json else "No Deducible"
         else:
-            # Lógica estándar para 13 dígitos o más
-            if info_json:
-                detalle_final = info_json.get("DETALLE", "OTROS")
-                memo_final = info_json.get("MEMO", "PROFESIONAL")
-            else:
-                detalle_final, memo_final = "OTROS", "PROFESIONAL"
+            detalle_final = info_json["DETALLE"] if info_json else "OTROS"
+            memo_final = info_json["MEMO"] if info_json else "PROFESIONAL"
 
-        base_data = {
-            "TIPO": tipo_doc, "TIPO DE DOCUMENTO": tipo_doc,
-            "MES": mes_nombre, "FECHA": fecha_emision, "N. FACTURA": num_fact_completo, 
-            "RUC": ruc_emisor, "NOMBRE": razon_social, "N AUTORIZACION": num_autori,
-            "CONTRIBUYENTE": ruc_cliente, "RUC CLIENTE": ruc_cliente, "CLIENTE": nombre_cliente,
+        data = {
+            "TIPO": tipo, "TIPO DE DOCUMENTO": tipo, "FECHA": fecha, "N. FACTURA": num_fact,
+            "RUC": ruc_emisor, "NOMBRE": razon_social, "N AUTORIZACION": buscar(["numeroAutorizacion", "claveAcceso"]),
+            "CONTRIBUYENTE": ruc_cli, "RUC CLIENTE": ruc_cli, "CLIENTE": nom_cli,
             "DETALLE": detalle_final, "MEMO": memo_final
         }
+        
+        if "/" in fecha:
+            ms = {"01":"ENERO","02":"FEBRERO","03":"MARZO","04":"ABRIL","05":"MAYO","06":"JUNIO","07":"JULIO","08":"AGOSTO","09":"SEPTIEMBRE","10":"OCTUBRE","11":"NOVIEMBRE","12":"DICIEMBRE"}
+            data["MES"] = ms.get(fecha.split('/')[1], "DESCONOCIDO")
 
-        if tipo_doc == "RET":
-            rt_renta, rt_iva, base_renta, base_iva = 0.0, 0.0, 0.0, 0.0
-            sustento_formateado = ""
-            
-            doc_sus_node = xml_data.find(".//numDocSustento")
-            doc_sus_raw = doc_sus_node.text.strip() if (doc_sus_node is not None and doc_sus_node.text) else ""
-            
-            if doc_sus_raw:
-                parts = doc_sus_raw.replace('-','').strip()
-                if len(parts) >= 15: 
-                    sustento_formateado = f"{parts[0:3]}-{parts[3:6]}-{parts[6:]}"
-                elif len(doc_sus_raw.split('-')) == 3:
-                    sustento_formateado = doc_sus_raw
-
-            lista_retenciones = xml_data.findall(".//impuesto") + xml_data.findall(".//retencion")
-
-            for item in lista_retenciones:
-                cod_node = item.find("codigo")
-                cod = cod_node.text.strip() if (cod_node is not None and cod_node.text) else ""
+        if tipo == "RET":
+            r_renta, r_iva, b_renta, b_iva = 0.0, 0.0, 0.0, 0.0
+            node = xml_data.find(".//numDocSustento")
+            sus = node.text.replace('-','') if (node is not None and node.text) else ""
+            if len(sus) >= 15: sus = f"{sus[0:3]}-{sus[3:6]}-{sus[6:]}"
+            for item in (xml_data.findall(".//impuesto") + xml_data.findall(".//retencion")):
                 try:
-                    val_node = item.find("valorRetenido")
-                    val = float(val_node.text.strip() if (val_node is not None and val_node.text) else "0")
-                except: val = 0.0
-                try:
-                    base_node = item.find("baseImponible")
-                    base = float(base_node.text.strip() if (base_node is not None and base_node.text) else "0")
-                except: base = 0.0
-                
-                if cod == "1": rt_renta += val; base_renta += base
-                elif cod == "2": rt_iva += val; base_iva += base
-
-            base_data.update({
-                "ruc_recep": ruc_cliente, "nomrecep": nombre_cliente, "fechaemi": fecha_emision,
-                "razonsocial": razon_social, "ruc_emisor": ruc_emisor, "numfact": sustento_formateado, 
-                "numreten": num_fact_completo, "baserenta": base_renta, "rt_renta": rt_renta,
-                "baseiva": base_iva, "rt_iva": rt_iva, "numautori": num_autori,
-                "fecautori": buscar(["fechaAutorizacion"]) or fecha_emision,
-                "SUSTENTO": sustento_formateado, "TOTAL RET": rt_renta + rt_iva
-            })
-            return base_data
-
-        else: 
-            m = -1 if tipo_doc == "NC" else 1
-            total = buscar_float(["importeTotal", "total", "valorModificado"]) * m
-            propina = buscar_float(["propina"]) * m
-            
-            base_0, base_12_15, iva_12_15 = 0.0, 0.0, 0.0
-            no_obj_iva, exento_iva = 0.0, 0.0
-            otra_base, otro_monto_iva, ice_val = 0.0, 0.0, 0.0
-            
+                    c = item.find("codigo").text
+                    v = float(item.find("valorRetenido").text or 0)
+                    b = float(item.find("baseImponible").text or 0)
+                    if c == "1": r_renta += v; b_renta += b
+                    elif c == "2": r_iva += v; b_iva += b
+                except: continue
+            data.update({"numfact": sus, "numreten": num_fact, "baserenta": b_renta, "rt_renta": r_renta, "baseiva": b_iva, "rt_iva": r_iva, "TOTAL RET": r_renta+r_iva, "SUSTENTO": sus, "fechaemi": fecha, "razonsocial": razon_social, "ruc_emisor": ruc_emisor})
+            return data
+        else:
+            m = -1 if tipo == "NC" else 1
+            b0, b12, i12, ice, no_obj, exento = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
             for imp in xml_data.findall(".//totalImpuesto"):
                 try:
-                    cod = imp.find("codigo").text
-                    cod_por = imp.find("codigoPorcentaje").text
-                    base = float(imp.find("baseImponible").text or 0) * m
-                    valor = float(imp.find("valor").text or 0) * m
-                    
-                    if cod == "2":
-                        if cod_por == "0": base_0 += base
-                        elif cod_por in ["2", "3", "4", "8", "10"]:
-                            base_12_15 += base; iva_12_15 += valor
-                        elif cod_por == "6": no_obj_iva += base
-                        elif cod_por == "7": exento_iva += base
-                        else: otra_base += base; otro_monto_iva += valor
-                    elif cod == "3": ice_val += valor
-                    else: otra_base += base; otro_monto_iva += valor
-                except: continue 
-
+                    c, cp = imp.find("codigo").text, imp.find("codigoPorcentaje").text
+                    b, v = float(imp.find("baseImponible").text or 0)*m, float(imp.find("valor").text or 0)*m
+                    if c == "2":
+                        if cp == "0": b0 += b
+                        elif cp in ["2","3","4","8","10"]: b12 += b; i12 += v
+                        elif cp == "6": no_obj += b
+                        elif cp == "7": exento += b
+                except: continue
+            
+            total_val = 0.0
+            for t_tag in ["importeTotal", "total", "valorModificado"]:
+                f = xml_data.find(f".//{t_tag}")
+                if f is not None: total_val = float(f.text) * m; break
+            
             items = [d.find("descripcion").text for d in xml_data.findall(".//detalle") if d.find("descripcion") is not None]
-            subdetalle = " | ".join(items[:5]) if items else ""
+            data.update({"BASE. 0": b0, "BASE. 12 / 15": b12, "IVA.": i12, "TOTAL": total_val, "NO OBJ IVA": no_obj, "EXENTO DE IVA": exento, "SUBDETALLE": " | ".join(items[:5])})
+            return data
+    except: return None
 
-            base_data.update({
-                "SUBDETALLE": subdetalle,
-                "OTRA BASE IVA": otra_base, "OTRO IVA": otro_monto_iva, 
-                "MONTO ICE": ice_val, "PROPINAS": propina,
-                "EXENTO DE IVA": exento_iva, "NO OBJ IVA": no_obj_iva, 
-                "BASE. 0": base_0, "BASE. 12 / 15": base_12_15,
-                "IVA.": iva_12_15, "TOTAL": total
-            })
-            return base_data
-    except Exception as e:
-        print(f"Error procesando XML: {e}")
-        return None
+# --- 5. LÓGICA DE INTEGRACIÓN ---
+def procesar_ventas_con_retenciones(lista):
+    vts, rets = [], {}
+    for d in lista:
+        if d["TIPO"] == "FC": vts.append(d)
+        elif d["TIPO"] == "RET" and d.get("SUSTENTO"): rets[d["SUSTENTO"]] = d
+    res = []
+    for v in vts:
+        r = rets.get(v["N. FACTURA"], {})
+        res.append({
+            "MES": v.get("MES"), "FECHA": v["FECHA"], "N. FACTURA": v["N. FACTURA"],
+            "RUC": v["RUC CLIENTE"], "CLIENTE": v["CLIENTE"], "DETALLE": "SERVICIOS", "MEMO": "PROFESIONAL",
+            "BASE. 0": v.get("BASE. 0", 0), "BASE. 12 / 15": v.get("BASE. 12 / 15", 0), "IVA": v.get("IVA.", 0), "TOTAL": v.get("TOTAL", 0),
+            "FECHA RET": r.get("fechaemi", ""), "N° RET": r.get("numreten", ""), "RET RENTA": r.get("rt_renta", 0), "RET IVA": r.get("rt_iva", 0), "TOTAL RET": r.get("TOTAL RET", 0)
+        })
+    return res
 
-# --- 5. LÓGICA DE INTEGRACIÓN (CRUCE VENTAS) ---
-def procesar_ventas_con_retenciones(lista_datos_crudos):
-    ventas, retenciones_map = [], {}
-    for dato in lista_datos_crudos:
-        if dato["TIPO"] == "FC": ventas.append(dato)
-        elif dato["TIPO"] == "RET" and dato.get("SUSTENTO"): retenciones_map[dato["SUSTENTO"]] = dato
-
-    ventas_integradas = []
-    for venta in ventas:
-        num_fact = venta["N. FACTURA"] 
-        ret_asociada = retenciones_map.get(num_fact, {}) 
-        fila = {
-            "MES": venta.get("MES"), "FECHA": venta.get("FECHA"), "N. FACTURA": num_fact,
-            "RUC": venta.get("RUC CLIENTE"), "CLIENTE": venta.get("CLIENTE"),
-            "DETALLE": "SERVICIOS", "MEMO": "PROFESIONAL", "MONTO REEMBOLS": 0.0,
-            "BASE. 0": venta.get("BASE. 0", 0), "BASE. 12 / 15": venta.get("BASE. 12 / 15", 0),
-            "IVA": venta.get("IVA.", 0), "TOTAL": venta.get("TOTAL", 0),
-            "FECHA RET": ret_asociada.get("fechaemi", ""),
-            "N° RET": ret_asociada.get("numreten", ""),
-            "N° AUTORIZACIÓN": ret_asociada.get("numautori", ""),
-            "RET RENTA": ret_asociada.get("rt_renta", 0), 
-            "RET IVA": ret_asociada.get("rt_iva", 0),
-            "ISD": 0.0, "TOTAL RET": ret_asociada.get("TOTAL RET", 0)
-        }
-        ventas_integradas.append(fila)
-    return ventas_integradas
-
-# --- 6. GENERADOR MULTI-EXCEL MAESTRO (CON MARCA VIRAL) ---
+# --- 6. GENERADOR EXCEL ---
 def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_lista=None, sri_mode=None):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         wb = writer.book
         f_azul = wb.add_format({'bold':True,'align':'center','border':1,'bg_color':'#002060','font_color':'white'})
         f_amar = wb.add_format({'bold':True,'align':'center','border':1,'bg_color':'#FFD966'})
-        f_verd = wb.add_format({'bold':True,'align':'center','border':1,'bg_color':'#92D050'})
-        f_gris = wb.add_format({'bold':True,'align':'center','border':1,'bg_color':'#F2F2F2'})
         f_num = wb.add_format({'num_format':'_-$ * #,##0.00_-','border':1})
-        f_tot = wb.add_format({'bold':True,'num_format':'_-$ * #,##0.00_-','border':1,'bg_color':'#EFEFEF'})
-        
-        texto_pie = "&LGenerado por RAPIDITO AI&RConsigue tu cuenta gratis en: rapidito.ec"
+        texto_pie = "&LGenerado por RAPIDITO AI&Rrapidito.ec"
 
-        if sri_mode:
+        if data_sri_lista:
             df = pd.DataFrame(data_sri_lista)
-            if sri_mode == "NC":
-                cols = ["NOMBRE","RUC","N AUTORIZACION","FECHA","TIPO DE DOCUMENTO","N. FACTURA","MES","RUC CLIENTE","CLIENTE","PROPINAS","BASE. 0","NO OBJ IVA","BASE. 12 / 15","IVA.","TOTAL"]
-                header_fmt = f_amar; sheet_name = "NOTAS DE CREDITO"
-            elif sri_mode == "RET":
-                cols = ["ruc_recep", "nomrecep", "fechaemi", "razonsocial", "ruc_emisor", "numfact", "numreten", "baserenta", "rt_renta", "baseiva", "rt_iva", "numautori", "fecautori"]
-                header_fmt = f_verd; sheet_name = "RETENCIONES"
-            else: 
-                cols = ["MES","FECHA","N. FACTURA","TIPO DE DOCUMENTO","RUC","CONTRIBUYENTE","NOMBRE","DETALLE","MEMO","OTRA BASE IVA","OTRO IVA","MONTO ICE","PROPINAS","EXENTO DE IVA","NO OBJ IVA","BASE. 0","BASE. 12 / 15","IVA.","TOTAL","SUBDETALLE"]
-                header_fmt = f_azul; sheet_name = "FACTURAS"
-
+            cols = ["MES","FECHA","N. FACTURA","TIPO DE DOCUMENTO","RUC","CONTRIBUYENTE","NOMBRE","DETALLE","MEMO","BASE. 0","BASE. 12 / 15","IVA.","TOTAL"]
+            if sri_mode == "RET": cols = ["fechaemi", "razonsocial", "ruc_emisor", "numfact", "numreten", "baserenta", "rt_renta", "baseiva", "rt_iva"]
             for c in cols: 
                 if c not in df.columns: df[c] = ""
-            df = df[cols]
-            ws = wb.add_worksheet(sheet_name)
-            ws.set_footer(texto_pie) 
-            for i, c in enumerate(cols): ws.write(0, i, c, header_fmt)
-            for r, row in enumerate(df.values, 1):
-                for c, val in enumerate(row): ws.write(r, c, val, f_num if isinstance(val, (int,float)) else wb.add_format({'border':1}))
-            ws.set_column(0, len(cols)-1, 15)
-
+            ws = wb.add_worksheet('REPORTE')
+            for i, c in enumerate(cols): ws.write(0, i, c, f_azul)
+            for r, row in enumerate(df[cols].values, 1):
+                for c, v in enumerate(row): ws.write(r, c, v, f_num if isinstance(v, (float,int)) else wb.add_format({'border':1}))
         else:
-            meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"]
             if data_compras:
                 df_c = pd.DataFrame(data_compras)
-                orden_c = ["MES","FECHA","N. FACTURA","TIPO DE DOCUMENTO","RUC","CONTRIBUYENTE","NOMBRE","DETALLE","MEMO","OTRA BASE IVA","OTRO IVA","MONTO ICE","PROPINAS","EXENTO DE IVA","NO OBJ IVA","BASE. 0","BASE. 12 / 15","IVA.","TOTAL","SUBDETALLE"]
-                for c in orden_c: 
-                    if c not in df_c.columns: df_c[c] = ""
-                df_c = df_c[orden_c]
+                orden_c = ["MES","FECHA","N. FACTURA","TIPO DE DOCUMENTO","RUC","CONTRIBUYENTE","NOMBRE","DETALLE","MEMO","BASE. 0","BASE. 12 / 15","IVA.","TOTAL"]
                 ws_c = wb.add_worksheet('COMPRAS')
-                ws_c.set_footer(texto_pie) 
-                for i, c in enumerate(orden_c):
-                    fmt = f_amar if i in range(9, 15) else f_azul
-                    ws_c.write(0, i, c, fmt)
-                for r, row in enumerate(df_c.values, 1):
-                    for c, val in enumerate(row): ws_c.write(r, c, val, f_num if isinstance(val, (int,float)) else wb.add_format({'border':1}))
-                ft = len(df_c) + 1; ws_c.write(ft, 0, "TOTAL", f_tot)
-                for cidx in range(9, 19): 
-                    l = xlsxwriter.utility.xl_col_to_name(cidx); ws_c.write_formula(ft, cidx, f"=SUM({l}2:{l}{ft})", f_tot)
-
-                ws_ra = wb.add_worksheet('REPORTE ANUAL')
-                ws_ra.set_footer(texto_pie) 
-                ws_ra.set_column('A:K', 14); ws_ra.merge_range('B1:B2', "Negocios y\nServicios", f_azul)
-                cats=["VIVIENDA","SALUD","EDUCACION","ALIMENTACION","VESTIMENTA","TURISMO","NO DEDUCIBLE","SERVICIOS BASICOS"]
-                icos=["🏠","❤️","🎓","🛒","🧢","✈️","🚫","💡"]
-                for i,(ct,ic) in enumerate(zip(cats,icos)): ws_ra.write(0,i+2,ic,f_azul); ws_ra.write(1,i+2,ct.title(),f_azul)
-                ws_ra.merge_range('K1:K2',"Total Mes",f_azul); ws_ra.write('B3',"PROFESIONALES",f_gris); ws_ra.merge_range('C3:J3',"GASTOS PERSONALES",f_gris)
-                
-                cols_gasto = ["P","Q","O","N","J","M"] 
-                for r, mes in enumerate(meses):
-                    fila = r+4; ws_ra.write(r+3,0,mes.title(),f_num)
-                    f_pr = "+".join([f"SUMIFS('COMPRAS'!${l}:${l},'COMPRAS'!$A:$A,\"{mes}\",'COMPRAS'!$I:$I,\"PROFESIONAL\")" for l in ["P","Q","O","N","J","M"]])
-                    ws_ra.write_formula(r+3,1,"="+f_pr,f_num)
-                    for cidx, cat in enumerate(cats):
-                        f_pe = "+".join([f"SUMIFS('COMPRAS'!${l}:${l},'COMPRAS'!$A:$A,\"{mes}\",'COMPRAS'!$H:$H,\"{cat}\")" for l in cols_gasto])
-                        ws_ra.write_formula(r+3,cidx+2,"="+f_pe,f_num)
-                    ws_ra.write_formula(r+3,10,f"=SUM(B{fila}:J{fila})",f_num)
-                ws_ra.write(15,0,"TOTAL",f_tot)
-                for c in range(1,11): l=xlsxwriter.utility.xl_col_to_name(c); ws_ra.write_formula(15,c,f"=SUM({l}4:{l}15)",f_tot)
-
+                for i, c in enumerate(orden_c): ws_c.write(0, i, c, f_azul)
+                for r, row in enumerate(df_c[orden_c].values, 1):
+                    for c, v in enumerate(row): ws_c.write(r, c, v, f_num if isinstance(v, (float,int)) else wb.add_format({'border':1}))
             if data_ventas_ret:
                 df_v = pd.DataFrame(data_ventas_ret)
-                orden_v = ["MES","FECHA","N. FACTURA","RUC","CLIENTE","DETALLE","MEMO","MONTO REEMBOLS","BASE. 0","BASE. 12 / 15","IVA","TOTAL","FECHA RET","N° RET","N° AUTORIZACIÓN","RET RENTA","RET IVA","ISD","TOTAL RET"]
-                for c in orden_v: 
-                    if c not in df_v.columns: df_v[c] = ""
-                df_v = df_v[orden_v]
                 ws_v = wb.add_worksheet('VENTAS')
-                ws_v.set_footer(texto_pie) 
-                for i, c in enumerate(orden_v): ws_v.write(0, i, c, f_verd if i >= 12 else f_azul)
+                for i, c in enumerate(df_v.columns): ws_v.write(0, i, c, f_azul)
                 for r, row in enumerate(df_v.values, 1):
-                    for c, val in enumerate(row): ws_v.write(r, c, val, f_num if isinstance(val, (int,float)) else wb.add_format({'border':1}))
-                ft_v = len(df_v) + 1; ws_v.write(ft_v, 0, "TOTAL", f_tot)
-                for cidx in range(7, 19): l = xlsxwriter.utility.xl_col_to_name(cidx); ws_v.write_formula(ft_v, cidx, f"=SUM({l}2:{l}{ft_v})", f_tot)
-
-                ws_p = wb.add_worksheet('PROYECCION')
-                ws_p.set_footer(texto_pie) 
-                ws_p.set_column('A:A', 12); ws_p.set_column('B:M', 15)
-                ws_p.merge_range('A1:D1', f"PERIODO: {datetime.now().year}", f_azul)
-                for i, h in enumerate(["VENTAS", "COMPRAS", "TOTAL"]): ws_p.write(i+2, 0, h, f_azul)
-                for c, mes in enumerate(meses):
-                    col = c + 1; l = xlsxwriter.utility.xl_col_to_name(col)
-                    ws_p.write(1, col, mes, f_azul)
-                    ws_p.write_formula(2, col, f"=SUMIFS(VENTAS!$I:$I,VENTAS!$A:$A,\"{mes}\") + SUMIFS(VENTAS!$J:$J,VENTAS!$A:$A,\"{mes}\")", f_num)
-                    if data_compras: ws_p.write_formula(3, col, 
-                            f"=SUMIFS('COMPRAS'!$P:$P,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\") + "
-                            f"SUMIFS('COMPRAS'!$Q:$Q,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\") + "
-                            f"SUMIFS('COMPRAS'!$O:$O,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\") + "
-                            f"SUMIFS('COMPRAS'!$N:$N,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\") + "
-                            f"SUMIFS('COMPRAS'!$M:$M,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\") + "                            
-                            f"SUMIFS('COMPRAS'!$J:$J,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\")", 
-                            f_num)
-                    else: ws_p.write(3, col, 0, f_num)
-                    ws_p.write_formula(4, col, f"={l}3-{l}4", f_tot)
-                lt = xlsxwriter.utility.xl_col_to_name(len(meses)+1)
-                ws_p.write(1, len(meses)+1, "TOTAL", f_azul)
-                for r in range(2,5): ws_p.write_formula(r, len(meses)+1, f"=SUM(B{r+1}:{xlsxwriter.utility.xl_col_to_name(len(meses))}{r+1})", f_tot)
-
+                    for c, v in enumerate(row): ws_v.write(r, c, v, f_num if isinstance(v, (float,int)) else wb.add_format({'border':1}))
     return output.getvalue()
 
-# ==========================================
-# --- 7. INTERFAZ (SÓLO COPIAR Y PEGAR) ---
-# ==========================================
-
+# --- 7. INTERFAZ ORGANIZADA ---
 st.title(f"🚀 RAPIDITO AI - {st.session_state.get('usuario_actual', 'Portal Contable')}")
 
-# --- BARRA LATERAL (SIDEBAR) REORGANIZADA ---
 with st.sidebar:
     st.header("⚙️ Panel de Control")
-    
-    # 1. BOTÓN NUEVO INFORME
     if st.button("🧹 NUEVO INFORME", type="primary", use_container_width=True):
         st.session_state.id_proceso += 1
-        st.session_state.data_compras_cache = []
-        st.session_state.data_ventas_cache = []
+        st.session_state.data_compras_cache, st.session_state.data_ventas_cache = [], []
+        st.session_state.sri_results = {}
         st.rerun()
-    
     st.markdown("---")
-
-    # 2. CONFIGURACIÓN MAESTRO (Sólo visible para GABRIEL)
-    if st.session_state.get("usuario_actual") == "GABRIEL":
+    if st.session_state.usuario_actual == "GABRIEL":
         st.subheader("🔑 Master Config")
-        up_xls = st.file_uploader("Actualizar JSON (Excel)", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
+        up_xls = st.file_uploader("Actualizar JSON", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
         if up_xls:
             df = pd.read_excel(up_xls)
-            df.columns = [c.upper().strip() for c in df.columns]
             for _, r in df.iterrows():
                 nm = str(r.get("NOMBRE","")).upper().strip()
-                if nm: 
-                    st.session_state.memoria["empresas"][nm] = {
-                        "DETALLE": str(r.get("DETALLE","OTROS")).upper(),
-                        "MEMO": str(r.get("MEMO","PROFESIONAL")).upper()
-                    }
-            guardar_memoria()
-            st.success("Memoria actualizada.")
-            registrar_actividad(st.session_state.usuario_actual, "ACTUALIZÓ MEMORIA")
-        st.markdown("---")
-
-    # 3. BUZÓN DE SUGERENCIAS
+                if nm: st.session_state.memoria["empresas"][nm] = {"DETALLE":str(r.get("DETALLE","OTROS")).upper(),"MEMO":str(r.get("MEMO","PROFESIONAL")).upper()}
+            guardar_memoria(); st.success("Guardado.")
     st.subheader("📬 Sugerencias")
-    sug_text = st.text_area("¿Cómo podemos mejorar?", key="txt_sugerencia")
+    sug = st.text_area("Ideas:")
     if st.button("Enviar Sugerencia", use_container_width=True):
-        if sug_text:
-            with st.spinner("Enviando..."):
-                exito = registrar_actividad(st.session_state.usuario_actual, accion="ENVIÓ SUGERENCIA", sugerencia=sug_text)
-                time.sleep(0.5) 
-            if exito: st.success("¡Gracias! Registrado.")
-            else: st.error("No se pudo enviar.")
-        else: st.warning("Escribe algo primero.")
-
+        if sug: registrar_actividad(st.session_state.usuario_actual, "SUGERENCIA", sugerencia=sug); st.success("Enviado")
     st.markdown("---")
-
-    # 4. BOTÓN CERRAR SESIÓN
     if st.button("🚪 Cerrar Sesión", use_container_width=True):
-        st.session_state.autenticado = False
-        st.rerun()
+        st.session_state.autenticado = False; st.rerun()
 
-# --- CUERPO PRINCIPAL (INVITACIONES Y PROCESAMIENTO) ---
-
+# CUERPO PRINCIPAL
 st.subheader("💎 Gana Meses PRO")
 inv = st.session_state.invitaciones_disponibles
-st.write(f"Tienes **{inv}** pases VIP disponibles.")
-
 if inv > 0:
-    with st.expander("🎁 Regalar Invitación"):
-        nuevo_email = st.text_input("Email de tu colega")
+    with st.expander(f"🎁 Regalar Invitación ({inv} disponibles)"):
+        email = st.text_input("Email colega")
         if st.button("Generar Pase"):
-            if nuevo_email and "@" in nuevo_email:
-                with st.spinner("Creando cuenta..."):
-                    resp_inv = conectar_api({"accion": "INVITAR", "usuario": st.session_state.usuario_actual, "invitado": nuevo_email})
-                    if resp_inv.get("exito"):
-                        st.session_state.invitaciones_disponibles = resp_inv.get("nuevo_saldo")
-                        st.success("¡Invitación Exitosa!")
-                        
-                        texto_ws = f"🎁 *¡Hola! Te tengo un regalo.*\n\nTe acabo de generar un pase para *RAPIDITO AI*. 🚀\n\n👤 Usuario: {nuevo_email}\n🔑 Clave: Rapidito2026\n👉 https://pruebas1998.streamlit.app"
-                        texto_codificado = urllib.parse.quote(texto_ws)
-                        link_ws = f"https://wa.me/?text={texto_codificado}"
-                        st.markdown(f'<a href="{link_ws}" target="_blank"><button style="background-color:#25D366;color:white;border:none;padding:12px;border-radius:8px;width:100%;font-weight:bold;cursor:pointer;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
-            else: st.warning("Escribe un correo válido.")
+            resp = conectar_api({"accion": "INVITAR", "usuario": st.session_state.usuario_actual, "invitado": email})
+            if resp.get("exito"):
+                msg = urllib.parse.quote(f"🎁 Pase exclusivo *RAPIDITO AI*.\n👤 Usuario: {email}\n🔑 Clave: Rapidito2026\n👉 https://pruebas1998.streamlit.app")
+                st.markdown(f'<a href="https://wa.me/?text={msg}" target="_blank"><button style="background-color:#25D366;color:white;width:100%;font-weight:bold;padding:10px;border-radius:8px;border:none;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
 
-tab_xml, tab_sri = st.tabs(["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (TXT)"])
+tab_manual, tab_sri = st.tabs(["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (TXT)"])
 
-with tab_xml:
-    st1, st2, st3 = st.tabs(["🛒 Compras y NC", "💰 Ventas y Retenciones", "📑 Informe Integral"])
-    
-    with st1:
-        up_c = st.file_uploader("Subir Compras (XML o ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"c_{st.session_state.id_proceso}")
+# --- TAB MANUAL ---
+with tab_manual:
+    m1, m2, m3 = st.tabs(["🛒 Compras y NC", "💰 Ventas y Retenciones", "📑 Informe Integral"])
+    with m1:
+        up_c = st.file_uploader("Compras (XML/ZIP)", type=["xml","zip"], accept_multiple_files=True, key=f"c_{st.session_state.id_proceso}")
         if up_c and st.button("Procesar Compras"):
-            xmls = procesar_archivos_entrada(up_c)
-            data = [extraer_datos_robusto(x) for x in xmls]
+            data = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up_c)]
             data = [d for d in data if d and d["TIPO"] in ["FC","NC"]]
-            if data:
-                st.session_state.data_compras_cache = data
-                st.success(f"{len(data)} facturas procesadas.")
-                st.download_button("📥 Descargar Excel Compras", generar_excel_multiexcel(data_compras=data), f"Compras_{datetime.now().strftime('%H%M')}.xlsx")
-
-    with st2:
-        up_v = st.file_uploader("Subir Ventas/Ret (XML o ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"v_{st.session_state.id_proceso}")
+            st.session_state.data_compras_cache = data
+            st.download_button("📥 Excel Compras", generar_excel_multiexcel(data_compras=data), "Compras.xlsx")
+    with m2:
+        up_v = st.file_uploader("Ventas (XML/ZIP)", type=["xml","zip"], accept_multiple_files=True, key=f"v_{st.session_state.id_proceso}")
         if up_v and st.button("Procesar Ventas"):
-            xmls = procesar_archivos_entrada(up_v)
-            raw = [extraer_datos_robusto(x) for x in xmls]
+            raw = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up_v)]
             data = procesar_ventas_con_retenciones([d for d in raw if d])
-            if data:
-                st.session_state.data_ventas_cache = data
-                st.success(f"{len(data)} ventas integradas.")
-                st.download_button("📥 Descargar Excel Ventas", generar_excel_multiexcel(data_ventas_ret=data), f"Ventas_{datetime.now().strftime('%H%M')}.xlsx")
-
-    with st3:
-        st.info("Esta opción genera un solo archivo con: Compras, Ventas, Reporte Anual y Proyección.")
-        if st.button("🚀 GENERAR INFORME INTEGRAL"):
+            st.session_state.data_ventas_cache = data
+            st.download_button("📥 Excel Ventas", generar_excel_multiexcel(data_ventas_ret=data), "Ventas.xlsx")
+    with m3:
+        if st.button("🚀 Generar Informe Integral"):
             if st.session_state.data_compras_cache and st.session_state.data_ventas_cache:
-                excel_data = generar_excel_multiexcel(st.session_state.data_compras_cache, st.session_state.data_ventas_cache)
-                st.download_button("📥 DESCARGAR INFORME MAESTRO", excel_data, f"INTEGRAL_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx")
-            else:
-                st.error("Primero procesa 'Compras' y 'Ventas' en las pestañas anteriores.")
+                st.download_button("📥 DESCARGAR INTEGRAL", generar_excel_multiexcel(st.session_state.data_compras_cache, st.session_state.data_ventas_cache), "Integral.xlsx")
+            else: st.error("Primero procesa Compras y Ventas.")
 
+# --- TAB SRI (CON BOTONES PERSISTENTES) ---
 with tab_sri:
-    st.subheader("📡 Conexión Directa SRI")
-    up_txt = st.file_uploader("Subir TXT de Claves (49 dígitos)", type=["txt"], key="sri_txt")
-    if up_txt and st.button("Descargar Masivamente"):
-        claves = list(dict.fromkeys(re.findall(r'\d{49}', up_txt.read().decode("latin-1"))))
-        if claves:
-            bar, status = st.progress(0), st.empty()
-            lst = []
-            for i, cl in enumerate(claves):
-                try:
-                    r = requests.post(URL_WS, data=f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.autorizacion"><soapenv:Body><ec:autorizacionComprobante><claveAccesoComprobante>{cl}</claveAccesoComprobante></ec:autorizacionComprobante></soapenv:Body></soapenv:Envelope>', headers=HEADERS_WS, verify=False, timeout=5)
-                    if "<autorizaciones>" in r.text:
-                        d = extraer_datos_robusto(io.BytesIO(r.content))
-                        if d: lst.append(d)
-                except: pass
-                bar.progress((i+1)/len(claves))
-                status.text(f"Procesando {i+1} de {len(claves)}...")
-            if lst:
-                st.success("Descarga completada.")
-                st.download_button("📊 Descargar Excel SRI", generar_excel_multiexcel(data_sri_lista=lst), "SRI_Masivo.xlsx")
+    def bloque_sri_persistente(titulo, tipo_filtro, key):
+        st.subheader(titulo)
+        up = st.file_uploader(f"TXT {titulo}", type=["txt"], key=f"up_{key}")
+        
+        # Botón para disparar proceso
+        if up and st.button(f"🚀 Descargar {titulo}", key=f"btn_{key}"):
+            claves = list(dict.fromkeys(re.findall(r'\d{49}', up.read().decode("latin-1"))))
+            if claves:
+                bar, status = st.progress(0), st.empty()
+                lst, zip_buffer = [], io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zf:
+                    for i, cl in enumerate(claves):
+                        try:
+                            r = requests.post(URL_WS, data=f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.autorizacion"><soapenv:Body><ec:autorizacionComprobante><claveAccesoComprobante>{cl}</claveAccesoComprobante></ec:autorizacionComprobante></soapenv:Body></soapenv:Envelope>', headers=HEADERS_WS, verify=False, timeout=5)
+                            if "<autorizaciones>" in r.text:
+                                zf.writestr(f"{cl}.xml", r.text)
+                                d = extraer_datos_robusto(io.BytesIO(r.content))
+                                if d and (d["TIPO"] == tipo_filtro or (tipo_filtro=="FC" and d["TIPO"]=="LC")): lst.append(d)
+                        except: pass
+                        bar.progress((i+1)/len(claves))
+                        status.text(f"Procesando {i+1} de {len(claves)}")
+                
+                # Guardamos en session_state para que no se borren los botones
+                st.session_state.sri_results[key] = {"data": lst, "zip": zip_buffer.getvalue()}
 
+        # Mostrar botones si existen resultados en el estado
+        if key in st.session_state.sri_results:
+            res = st.session_state.sri_results[key]
+            if res["data"]:
+                st.success(f"✅ {len(res['data'])} documentos listos.")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.download_button(f"📊 Excel {titulo}", generar_excel_multiexcel(data_sri_lista=res["data"], sri_mode=tipo_filtro), f"{titulo}.xlsx", key=f"dl_ex_{key}")
+                with col2:
+                    st.download_button(f"📦 ZIP XMLs {titulo}", res["zip"], f"{titulo}.zip", key=f"dl_zip_{key}")
+            else:
+                st.warning("No se encontraron documentos válidos en el archivo.")
+
+    s1, s2, s3 = st.tabs(["Facturas", "Notas Crédito", "Retenciones"])
+    with s1: bloque_sri_persistente("Facturas Recibidas", "FC", "sri_fc")
+    with s2: bloque_sri_persistente("Notas de Crédito", "NC", "sri_nc")
+    with s3: bloque_sri_persistente("Retenciones", "RET", "sri_ret")
