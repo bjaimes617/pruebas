@@ -44,7 +44,6 @@ def conectar_api(payload):
 def registrar_actividad(usuario, accion, cantidad=None, sugerencia=None):
     # Usamos el mismo script para loguear actividad si tiene esa función, 
     # o mantenemos la lógica anterior si es un script separado.
-    # Por ahora mantenemos compatibilidad con el script de logging original si existe.
     URL_LOGGING = "https://script.google.com/macros/s/AKfycbyk0CWehcUec47HTGMjqsCs0sTKa_9J3ZU_Su7aRxfwmNa76-dremthTuTPf-FswZY/exec"
     detalle_accion = f"{accion} ({cantidad} XMLs)" if cantidad is not None else accion
     payload = {"usuario": str(usuario), "accion": str(detalle_accion)}
@@ -251,7 +250,7 @@ def extraer_datos_robusto(xml_file):
                             otra_base += base; otro_monto_iva += valor
                     elif cod == "3": ice_val += valor
                     else:
-                         otra_base += base; otro_monto_iva += valor
+                        otra_base += base; otro_monto_iva += valor
                 except: continue 
 
             if tipo_doc == "NC":
@@ -322,10 +321,8 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
         f_num = wb.add_format({'num_format':'_-$ * #,##0.00_-','border':1})
         f_tot = wb.add_format({'bold':True,'num_format':'_-$ * #,##0.00_-','border':1,'bg_color':'#EFEFEF'})
         
-        # --- MARCA DE AGUA (ESTRATEGIA VIRAL) ---
         texto_pie = "&LGenerado por RAPIDITO AI&RConsigue tu cuenta gratis en: rapidito.ec"
 
-        # === MODO SRI (Descarga Masiva) ===
         if sri_mode:
             df = pd.DataFrame(data_sri_lista)
             if sri_mode == "NC":
@@ -343,13 +340,12 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
             df = df[cols]
             
             ws = wb.add_worksheet(sheet_name)
-            ws.set_footer(texto_pie) # Agregar pie de página viral
+            ws.set_footer(texto_pie) 
             for i, c in enumerate(cols): ws.write(0, i, c, header_fmt)
             for r, row in enumerate(df.values, 1):
                 for c, val in enumerate(row): ws.write(r, c, val, f_num if isinstance(val, (int,float)) else wb.add_format({'border':1}))
             ws.set_column(0, len(cols)-1, 15)
 
-        # === MODO MANUAL (INTEGRAL) ===
         else:
             meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"]
 
@@ -361,7 +357,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 df_c = df_c[orden_c]
                 
                 ws_c = wb.add_worksheet('COMPRAS')
-                ws_c.set_footer(texto_pie) # Viral
+                ws_c.set_footer(texto_pie) 
                 for i, c in enumerate(orden_c):
                     fmt = f_amar if i in range(9, 15) else f_azul
                     ws_c.write(0, i, c, fmt)
@@ -374,7 +370,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
 
                 # REPORTE ANUAL
                 ws_ra = wb.add_worksheet('REPORTE ANUAL')
-                ws_ra.set_footer(texto_pie) # Viral
+                ws_ra.set_footer(texto_pie) 
                 ws_ra.set_column('A:K', 14); ws_ra.merge_range('B1:B2', "Negocios y\nServicios", f_azul)
                 cats=["VIVIENDA","SALUD","EDUCACION","ALIMENTACION","VESTIMENTA","TURISMO","NO DEDUCIBLE","SERVICIOS BASICOS"]
                 icos=["🏠","❤️","🎓","🛒","🧢","✈️","🚫","💡"]
@@ -401,7 +397,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 df_v = df_v[orden_v]
                 
                 ws_v = wb.add_worksheet('VENTAS')
-                ws_v.set_footer(texto_pie) # Viral
+                ws_v.set_footer(texto_pie) 
                 for i, c in enumerate(orden_v): ws_v.write(0, i, c, f_verd if i >= 12 else f_azul)
                 for r, row in enumerate(df_v.values, 1):
                     for c, val in enumerate(row): ws_v.write(r, c, val, f_num if isinstance(val, (int,float)) else wb.add_format({'border':1}))
@@ -410,7 +406,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 for cidx in range(7, 19): l = xlsxwriter.utility.xl_col_to_name(cidx); ws_v.write_formula(ft_v, cidx, f"=SUM({l}2:{l}{ft_v})", f_tot)
 
                 ws_p = wb.add_worksheet('PROYECCION')
-                ws_p.set_footer(texto_pie) # Viral
+                ws_p.set_footer(texto_pie) 
                 ws_p.set_column('A:A', 12); ws_p.set_column('B:M', 15)
                 ws_p.merge_range('A1:D1', f"PERIODO: {datetime.now().year}", f_azul)
                 for i, h in enumerate(["VENTAS", "COMPRAS", "TOTAL"]): ws_p.write(i+2, 0, h, f_azul)
@@ -436,7 +432,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
     return output.getvalue()
 
 # --- 7. INTERFAZ ---
-st.title(f"🚀 RAPIDITO - {st.session_state.usuario_actual}")
+st.title(f"🚀 RAPIDITO - {st.session_state.get('usuario_actual', 'Invitado')}")
 
 with st.sidebar:
     st.header("Menú Principal")
@@ -445,7 +441,6 @@ with st.sidebar:
         st.rerun()
     st.markdown("---")
     
-    # --- MÓDULO DE EXPANSIÓN VIRAL ---
 st.subheader("💎 Gana Meses PRO")
 inv = st.session_state.invitaciones_disponibles
 st.write(f"Tienes **{inv}** pases VIP disponibles.")
@@ -457,7 +452,6 @@ if inv > 0:
         if st.button("Generar Pase"):
             if nuevo_email and "@" in nuevo_email:
                 with st.spinner("Creando cuenta..."):
-                    # Llamada para crear usuario y restar saldo
                     resp_inv = conectar_api({
                         "accion": "INVITAR", 
                         "usuario": st.session_state.usuario_actual, 
@@ -468,7 +462,6 @@ if inv > 0:
                         st.session_state.invitaciones_disponibles = resp_inv.get("nuevo_saldo")
                         st.success("¡Invitación Exitosa!")
                         
-                        # --- DEFINICIÓN DEL TEXTO ---
                         texto_ws = f"""🎁 *¡Hola! Te tengo un regalo.*
 
 Te acabo de generar un pase exclusivo para *RAPIDITO AI*. 🚀
@@ -482,8 +475,6 @@ Olvídate de digitar facturas, esta IA lo hace por ti.
 
 ¡Pruébalo y me cuentas! 😎"""
 
-                        # --- CORRECCIÓN AQUÍ: USAR URLLIB ---
-                        # Esto convierte los Enters en %0A y los emojis en código seguro
                         texto_codificado = urllib.parse.quote(texto_ws)
                         link_ws = f"https://wa.me/?text={texto_codificado}"
                         
@@ -502,49 +493,47 @@ else:
     st.warning("⛔ Agotaste tus invitaciones.")
     st.caption("Procesa más de 100 XMLs esta semana para ganar 2 pases más.")
 
-    st.markdown("---")
-    if st.session_state.usuario_actual == "GABRIEL":
-        st.header("Master Config")
-        up_xls = st.file_uploader("Cargar Excel Maestro", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
-        if up_xls:
-            df = pd.read_excel(up_xls); df.columns = [c.upper().strip() for c in df.columns]
-            for _, r in df.iterrows():
-                nm = str(r.get("NOMBRE","")).upper().strip()
-                if nm: st.session_state.memoria["empresas"][nm] = {"DETALLE":str(r.get("DETALLE","OTROS")).upper(),"MEMO":str(r.get("MEMO","PROFESIONAL")).upper()}
-            guardar_memoria(); st.success("Memoria actualizada."); registrar_actividad(st.session_state.usuario_actual, "ACTUALIZÓ MEMORIA")
+st.markdown("---")
+if st.session_state.get("usuario_actual") == "GABRIEL":
+    st.header("Master Config")
+    up_xls = st.file_uploader("Cargar Excel Maestro", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
+    if up_xls:
+        df = pd.read_excel(up_xls); df.columns = [c.upper().strip() for c in df.columns]
+        for _, r in df.iterrows():
+            nm = str(r.get("NOMBRE","")).upper().strip()
+            if nm: st.session_state.memoria["empresas"][nm] = {"DETALLE":str(r.get("DETALLE","OTROS")).upper(),"MEMO":str(r.get("MEMO","PROFESIONAL")).upper()}
+        guardar_memoria(); st.success("Memoria actualizada."); registrar_actividad(st.session_state.usuario_actual, "ACTUALIZÓ MEMORIA")
 
-    st.markdown("---")
-    st.header("📬 Buzón de Sugerencias")
-    sug_text = st.text_area("¿Qué podemos mejorar?", key="txt_sugerencia")
-    if st.button("Enviar Sugerencia"):
-        if sug_text:
-            with st.spinner("Enviando..."):
-                exito = registrar_actividad(st.session_state.usuario_actual, accion="ENVIÓ SUGERENCIA", sugerencia=sug_text)
-                time.sleep(1) 
-            if exito: st.success("¡Gracias! Tu opinión ha sido registrada.")
-            else: st.error("No se pudo enviar. Revisa tu conexión.")
-        else: st.warning("Escribe algo antes de enviar.")
+st.markdown("---")
+st.header("📬 Buzón de Sugerencias")
+sug_text = st.text_area("¿Qué podemos mejorar?", key="txt_sugerencia")
+if st.button("Enviar Sugerencia"):
+    if sug_text:
+        with st.spinner("Enviando..."):
+            exito = registrar_actividad(st.session_state.get("usuario_actual"), accion="ENVIÓ SUGERENCIA", sugerencia=sug_text)
+            time.sleep(1) 
+        if exito: st.success("¡Gracias! Tu opinión ha sido registrada.")
+        else: st.error("No se pudo enviar. Revisa tu conexión.")
+    else: st.warning("Escribe algo antes de enviar.")
 
-    st.markdown("---")
-    if st.button("Cerrar Sesión"):
-        st.session_state.autenticado = False; st.rerun()
+st.markdown("---")
+if st.button("Cerrar Sesión"):
+    st.session_state.autenticado = False; st.rerun()
 
 tab_xml, tab_sri = st.tabs(["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (TXT)"])
 
 with tab_xml:
     st1, st2, st3 = st.tabs(["🛒 Compras y NC", "💰 Ventas y Retenciones", "📑 Informe Integral"])
     with st1:
-        # AHORA ACEPTA ZIP Y XML
         up_c = st.file_uploader("Subir Compras/NC (XML o ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"c_{st.session_state.id_proceso}")
         if up_c and st.button("Procesar Compras"):
-            # PROCESAR ARCHIVOS (XMLs sueltos y ZIPs)
             xmls_reales = procesar_archivos_entrada(up_c)
             data = [extraer_datos_robusto(x) for x in xmls_reales]; data = [d for d in data if d and d["TIPO"] in ["FC","NC"]]
             if data:
                 st.session_state.data_compras_cache = data
                 registrar_actividad(st.session_state.usuario_actual, "GENERÓ REPORTE COMPRAS", len(data))
                 st.download_button("📥 Reporte Compras", generar_excel_multiexcel(data_compras=data), f"C_{datetime.now().strftime('%H%M')}.xlsx")
-            else: st.warning("No se encontraron XMLs válidos en los archivos subidos.")
+            else: st.warning("No se encontraron XMLs válidos.")
             
     with st2:
         up_v = st.file_uploader("Subir Ventas/Ret (XML o ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"v_{st.session_state.id_proceso}")
@@ -598,16 +587,10 @@ with tab_sri:
                     with c1: st.download_button(f"📦 ZIP XMLs {titulo}", zip_buffer.getvalue(), f"{titulo}.zip")
                     with c2: st.download_button(f"📊 Excel {titulo}", generar_excel_multiexcel(data_sri_lista=lst, sri_mode=tipo_filtro), f"{titulo}.xlsx")
                 else:
-                    st.warning("No se encontraron documentos válidos para este módulo.")
+                    st.warning("No se encontraron documentos válidos.")
 
     s1, s2, s3 = st.tabs(["Facturas", "Notas Crédito", "Retenciones"])
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
-
-
-
-
-
-
 
