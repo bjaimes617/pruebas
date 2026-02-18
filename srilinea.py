@@ -478,7 +478,7 @@ Olvídate de digitar facturas, esta IA lo hace por ti.
 👤 Usuario: {nuevo_email}
 🔑 Clave: Rapidito2026
 
-👉 *Entra aquí:* pruebas1998.streamlit.app
+👉 *Entra aquí:* https://pruebas1998.streamlit.app
 
 ¡Pruébalo y me cuentas! 😎"""
 
@@ -604,6 +604,7 @@ with tab_sri:
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
+
 
 
 
