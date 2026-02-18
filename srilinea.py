@@ -16,10 +16,9 @@ import time
 st.set_page_config(page_title="RAPIDITO AI - Portal Contable", layout="wide", page_icon="📊")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# URLs y Headers
 URL_WS = "https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl"
 HEADERS_WS = {"Content-Type": "text/xml;charset=UTF-8","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"}
-URL_SHEET = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkIGy-ovamvkCQjnjuT9kV7BndRqOeZlrEUEy9BZUH-oGISXG2a_own9BMbzTV21giZXgBqGxlTjkp/pub?output=csv"
+URL_SHEET = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRrwp5uUSVg8g7SfFlNf0ETGNvpFYlsJ-161Sf6yHS7rSG_vc7JVEnTWGlIsixLRiM_tkosgXNQ0GZV/pub?output=csv"
 
 # --- LOGGING Y SUGERENCIAS ---
 def registrar_actividad(usuario, accion, cantidad=None, sugerencia=None):
@@ -71,6 +70,7 @@ def guardar_memoria():
 
 # --- HELPER: DESCOMPRIMIR ZIP Y XMLs ---
 def procesar_archivos_entrada(lista_archivos):
+    """Recibe lista de UploadedFile (XML o ZIP) y devuelve lista de BytesIO solo con XMLs"""
     xmls_procesables = []
     for file in lista_archivos:
         if file.name.lower().endswith('.xml'):
@@ -92,8 +92,9 @@ def extraer_datos_robusto(xml_file):
         root = tree.getroot()
         xml_data = None
         
-        # Desempaquetar SOAP
+        # Desempaquetar SOAP (Búsqueda agresiva)
         for elem in root.iter():
+            # Buscamos etiquetas que parezcan 'comprobante' y tengan contenido XML dentro
             if 'comprobante' in elem.tag.lower() and elem.text and ("<" in elem.text or "&lt;" in elem.text):
                 try:
                     clean_text = re.sub(r'<\?xml.*?\?>', '', elem.text).strip()
@@ -101,14 +102,17 @@ def extraer_datos_robusto(xml_file):
                     break
                 except: continue
         
+        # Si no estaba en SOAP, usamos la raíz
         if xml_data is None: xml_data = root
 
+        # Detección del tipo de documento
         root_tag = xml_data.tag.lower()
         if 'notacredito' in root_tag: tipo_doc = "NC"
         elif 'comprobanteretencion' in root_tag: tipo_doc = "RET"
         elif 'liquidacioncompra' in root_tag: tipo_doc = "LC"
         else: tipo_doc = "FC" 
 
+        # Funciones auxiliares seguras
         def buscar(tags):
             for t in tags:
                 f = xml_data.find(f".//{t}")
@@ -123,6 +127,7 @@ def extraer_datos_robusto(xml_file):
         razon_social = buscar(["razonSocial"]).upper()
         ruc_emisor = buscar(["ruc"])
         
+        # Formato de factura
         estab = buscar(["estab"]) or "000"
         pto = buscar(["ptoEmi"]) or "000"
         sec = buscar(["secuencial"]) or "000000000"
@@ -138,6 +143,7 @@ def extraer_datos_robusto(xml_file):
                 mes_nombre = meses_dict.get(fecha_emision.split('/')[1], "DESCONOCIDO")
             except: pass
 
+        # Datos del Cliente/Sujeto Retenido
         ruc_cliente = buscar(["identificacionComprador", "identificacionSujetoRetenido"])
         nombre_cliente = buscar(["razonSocialComprador", "razonSocialSujetoRetenido"]).upper()
 
@@ -148,11 +154,13 @@ def extraer_datos_robusto(xml_file):
             "CONTRIBUYENTE": ruc_cliente, "RUC CLIENTE": ruc_cliente, "CLIENTE": nombre_cliente 
         }
 
+        # === LÓGICA RETENCIONES (VERDE) ===
         if tipo_doc == "RET":
             rt_renta, rt_iva = 0.0, 0.0
             base_renta, base_iva = 0.0, 0.0
             sustento_formateado = ""
             
+            # 1. Búsqueda segura del sustento
             doc_sus_node = xml_data.find(".//numDocSustento")
             doc_sus_raw = doc_sus_node.text.strip() if (doc_sus_node is not None and doc_sus_node.text) else ""
             
@@ -163,12 +171,15 @@ def extraer_datos_robusto(xml_file):
                 elif len(doc_sus_raw.split('-')) == 3:
                     sustento_formateado = doc_sus_raw
 
+            # 2. Búsqueda de valores (Compatible V1 y V2)
             lista_retenciones = xml_data.findall(".//impuesto") + xml_data.findall(".//retencion")
 
             for item in lista_retenciones:
+                # Código seguro
                 cod_node = item.find("codigo")
                 cod = cod_node.text.strip() if (cod_node is not None and cod_node.text) else ""
                 
+                # Extracción segura de valores numéricos
                 try:
                     val_node = item.find("valorRetenido")
                     val_txt = val_node.text.strip() if (val_node is not None and val_node.text) else "0"
@@ -207,6 +218,7 @@ def extraer_datos_robusto(xml_file):
             })
             return base_data
 
+        # === LÓGICA FACTURAS / NC / LC ===
         else: 
             m = -1 if tipo_doc == "NC" else 1
             total = buscar_float(["importeTotal", "total", "valorModificado"]) * m
@@ -236,6 +248,7 @@ def extraer_datos_robusto(xml_file):
                          otra_base += base; otro_monto_iva += valor
                 except: continue 
 
+            # Memoria
             if tipo_doc == "NC":
                 detalle_final, memo_final = "", ""
             else:
@@ -259,7 +272,7 @@ def extraer_datos_robusto(xml_file):
         print(f"Error procesando XML: {e}")
         return None
 
-# --- 5. LÓGICA DE INTEGRACIÓN ---
+# --- 5. LÓGICA DE INTEGRACIÓN (CRUCE VENTAS) ---
 def procesar_ventas_con_retenciones(lista_datos_crudos):
     ventas = []
     retenciones_map = {}
@@ -268,20 +281,24 @@ def procesar_ventas_con_retenciones(lista_datos_crudos):
         if dato["TIPO"] == "FC": 
             ventas.append(dato)
         elif dato["TIPO"] == "RET" and dato.get("SUSTENTO"): 
+            # Normalizar clave de sustento por si acaso
             retenciones_map[dato["SUSTENTO"]] = dato
 
     ventas_integradas = []
     for venta in ventas:
-        num_fact = venta["N. FACTURA"]
-        ret_asociada = retenciones_map.get(num_fact, {})
+        num_fact = venta["N. FACTURA"] # Formato esperado: 001-001-000000123
+        ret_asociada = retenciones_map.get(num_fact, {}) # BUSCAR POR NUMERO DE FACTURA EXACTO
         
         fila = {
+            # AZUL (Venta)
             "MES": venta.get("MES"), "FECHA": venta.get("FECHA"), "N. FACTURA": num_fact,
             "RUC": venta.get("RUC CLIENTE"), "CLIENTE": venta.get("CLIENTE"),
             "DETALLE": "SERVICIOS", "MEMO": "PROFESIONAL", "MONTO REEMBOLS": 0.0,
             "BASE. 0": venta.get("BASE. 0", 0), "BASE. 12 / 15": venta.get("BASE. 12 / 15", 0),
             "IVA": venta.get("IVA.", 0), "TOTAL": venta.get("TOTAL", 0),
-            "FECHA RET": ret_asociada.get("fechaemi", ""), 
+            
+            # VERDE (Retención Cruzada)
+            "FECHA RET": ret_asociada.get("fechaemi", ""), # Usar fechaemi del dict de retencion
             "N° RET": ret_asociada.get("numreten", ""),
             "N° AUTORIZACIÓN": ret_asociada.get("numautori", ""),
             "RET RENTA": ret_asociada.get("rt_renta", 0), 
@@ -292,7 +309,7 @@ def procesar_ventas_con_retenciones(lista_datos_crudos):
         ventas_integradas.append(fila)
     return ventas_integradas
 
-# --- 6. GENERADOR MULTI-EXCEL ---
+# --- 6. GENERADOR MULTI-EXCEL MAESTRO ---
 def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_lista=None, sri_mode=None):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -304,18 +321,21 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
         f_num = wb.add_format({'num_format':'_-$ * #,##0.00_-','border':1})
         f_tot = wb.add_format({'bold':True,'num_format':'_-$ * #,##0.00_-','border':1,'bg_color':'#EFEFEF'})
         
+        # === MODO SRI (Descarga Masiva) ===
         if sri_mode:
             df = pd.DataFrame(data_sri_lista)
             if sri_mode == "NC":
                 cols = ["NOMBRE","RUC","N AUTORIZACION","FECHA","TIPO DE DOCUMENTO","N. FACTURA","MES","RUC CLIENTE","CLIENTE","PROPINAS","BASE. 0","NO OBJ IVA","BASE. 12 / 15","IVA.","TOTAL"]
                 header_fmt = f_amar; sheet_name = "NOTAS DE CREDITO"
             elif sri_mode == "RET":
+                # COLUMNAS EXACTAS DE LA IMAGEN VERDE
                 cols = ["ruc_recep", "nomrecep", "fechaemi", "razonsocial", "ruc_emisor", "numfact", "numreten", "baserenta", "rt_renta", "baseiva", "rt_iva", "numautori", "fecautori"]
                 header_fmt = f_verd; sheet_name = "RETENCIONES"
             else: 
                 cols = ["MES","FECHA","N. FACTURA","TIPO DE DOCUMENTO","RUC","CONTRIBUYENTE","NOMBRE","DETALLE","MEMO","OTRA BASE IVA","OTRO IVA","MONTO ICE","PROPINAS","EXENTO DE IVA","NO OBJ IVA","BASE. 0","BASE. 12 / 15","IVA.","TOTAL","SUBDETALLE"]
                 header_fmt = f_azul; sheet_name = "FACTURAS"
 
+            # Rellenar faltantes y ordenar
             for c in cols: 
                 if c not in df.columns: df[c] = ""
             df = df[cols]
@@ -324,11 +344,17 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
             for i, c in enumerate(cols): ws.write(0, i, c, header_fmt)
             for r, row in enumerate(df.values, 1):
                 for c, val in enumerate(row): ws.write(r, c, val, f_num if isinstance(val, (int,float)) else wb.add_format({'border':1}))
+            
+            # Ajuste de ancho
             ws.set_column(0, len(cols)-1, 15)
             
+            # NO return here, wait for context manager exit
+
+        # === MODO MANUAL (INTEGRAL) ===
         else:
             meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"]
 
+            # HOJA COMPRAS
             if data_compras:
                 df_c = pd.DataFrame(data_compras)
                 orden_c = ["MES","FECHA","N. FACTURA","TIPO DE DOCUMENTO","RUC","CONTRIBUYENTE","NOMBRE","DETALLE","MEMO","OTRA BASE IVA","OTRO IVA","MONTO ICE","PROPINAS","EXENTO DE IVA","NO OBJ IVA","BASE. 0","BASE. 12 / 15","IVA.","TOTAL","SUBDETALLE"]
@@ -338,6 +364,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 
                 ws_c = wb.add_worksheet('COMPRAS')
                 for i, c in enumerate(orden_c):
+                    # Amarillo para OTRA BASE hasta EXENTO (columnas especiales)
                     fmt = f_amar if i in range(9, 15) else f_azul
                     ws_c.write(0, i, c, fmt)
                 for r, row in enumerate(df_c.values, 1):
@@ -347,6 +374,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 for cidx in range(9, 19): 
                     l = xlsxwriter.utility.xl_col_to_name(cidx); ws_c.write_formula(ft, cidx, f"=SUM({l}2:{l}{ft})", f_tot)
 
+                # REPORTE ANUAL
                 ws_ra = wb.add_worksheet('REPORTE ANUAL')
                 ws_ra.set_column('A:K', 14); ws_ra.merge_range('B1:B2', "Negocios y\nServicios", f_azul)
                 cats=["VIVIENDA","SALUD","EDUCACION","ALIMENTACION","VESTIMENTA","TURISMO","NO DEDUCIBLE","SERVICIOS BASICOS"]
@@ -354,10 +382,10 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 for i,(ct,ic) in enumerate(zip(cats,icos)): ws_ra.write(0,i+2,ic,f_azul); ws_ra.write(1,i+2,ct.title(),f_azul)
                 ws_ra.merge_range('K1:K2',"Total Mes",f_azul); ws_ra.write('B3',"PROFESIONALES",f_gris); ws_ra.merge_range('C3:J3',"GASTOS PERSONALES",f_gris)
                 
-                cols_gasto = ["P","Q","O","N","J"] 
+                cols_gasto = ["P","Q","O","N","J","M"] 
                 for r, mes in enumerate(meses):
                     fila = r+4; ws_ra.write(r+3,0,mes.title(),f_num)
-                    f_pr = "+".join([f"SUMIFS('COMPRAS'!${l}:${l},'COMPRAS'!$A:$A,\"{mes}\",'COMPRAS'!$I:$I,\"PROFESIONAL\")" for l in ["P","Q","O","N","J"]])
+                    f_pr = "+".join([f"SUMIFS('COMPRAS'!${l}:${l},'COMPRAS'!$A:$A,\"{mes}\",'COMPRAS'!$I:$I,\"PROFESIONAL\")" for l in ["P","Q","O","N","J","M"]])
                     ws_ra.write_formula(r+3,1,"="+f_pr,f_num)
                     for cidx, cat in enumerate(cats):
                         f_pe = "+".join([f"SUMIFS('COMPRAS'!${l}:${l},'COMPRAS'!$A:$A,\"{mes}\",'COMPRAS'!$H:$H,\"{cat}\")" for l in cols_gasto])
@@ -366,6 +394,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 ws_ra.write(15,0,"TOTAL",f_tot)
                 for c in range(1,11): l=xlsxwriter.utility.xl_col_to_name(c); ws_ra.write_formula(15,c,f"=SUM({l}4:{l}15)",f_tot)
 
+            # HOJA VENTAS (CRUZADA)
             if data_ventas_ret:
                 df_v = pd.DataFrame(data_ventas_ret)
                 orden_v = ["MES","FECHA","N. FACTURA","RUC","CLIENTE","DETALLE","MEMO","MONTO REEMBOLS","BASE. 0","BASE. 12 / 15","IVA","TOTAL","FECHA RET","N° RET","N° AUTORIZACIÓN","RET RENTA","RET IVA","ISD","TOTAL RET"]
@@ -381,6 +410,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 ft_v = len(df_v) + 1; ws_v.write(ft_v, 0, "TOTAL", f_tot)
                 for cidx in range(7, 19): l = xlsxwriter.utility.xl_col_to_name(cidx); ws_v.write_formula(ft_v, cidx, f"=SUM({l}2:{l}{ft_v})", f_tot)
 
+                # PROYECCION
                 ws_p = wb.add_worksheet('PROYECCION')
                 ws_p.set_column('A:A', 12); ws_p.set_column('B:M', 15)
                 ws_p.merge_range('A1:D1', f"PERIODO: {datetime.now().year}", f_azul)
@@ -406,23 +436,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
 
     return output.getvalue()
 
-# --- 7. NUEVO MOTOR DE DESCARGA PDF ---
-def descargar_pdf_publico(clave_acceso):
-    """Descarga el RIDE (PDF) usando la URL pública del SRI simulando navegador"""
-    url_pdf = f"https://srienlinea.sri.gob.ec/facturacion-internet/consultas/publico/pdf-comprobante.jsp?claveAcceso={clave_acceso}"
-    headers_browser = {
-        "User-Agent": "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.2; WOW64; Trident/7.0; .NET4.0C; .NET4.0E; Zoom 3.6.0)",
-        "Accept": "application/pdf,application/xhtml+xml,application/xml",
-        "Referer": "https://srienlinea.sri.gob.ec/comprobantes-electronicos-internet/publico/validezComprobantes.jsf"
-    }
-    try:
-        r = requests.get(url_pdf, headers=headers_browser, verify=False, timeout=15)
-        if r.status_code == 200 and "application/pdf" in r.headers.get("Content-Type", ""):
-            return r.content
-        return None
-    except: return None
-
-# --- 8. INTERFAZ ---
+# --- 7. INTERFAZ ---
 st.title(f"🚀 RAPIDITO - {st.session_state.usuario_actual}")
 
 with st.sidebar:
@@ -462,8 +476,10 @@ tab_xml, tab_sri = st.tabs(["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (
 with tab_xml:
     st1, st2, st3 = st.tabs(["🛒 Compras y NC", "💰 Ventas y Retenciones", "📑 Informe Integral"])
     with st1:
+        # AHORA ACEPTA ZIP Y XML
         up_c = st.file_uploader("Subir Compras/NC (XML o ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"c_{st.session_state.id_proceso}")
         if up_c and st.button("Procesar Compras"):
+            # PROCESAR ARCHIVOS (XMLs sueltos y ZIPs)
             xmls_reales = procesar_archivos_entrada(up_c)
             data = [extraer_datos_robusto(x) for x in xmls_reales]; data = [d for d in data if d and d["TIPO"] in ["FC","NC"]]
             if data:
@@ -491,72 +507,44 @@ with tab_xml:
                 st.download_button("📥 INFORME INTEGRAL", generar_excel_multiexcel(st.session_state.data_compras_cache, st.session_state.data_ventas_cache), f"INT_{datetime.now().strftime('%H%M')}.xlsx")
             else: st.warning("Procese Compras y Ventas primero.")
 
-# BLOQUE SRI ACTUALIZADO CON PDFs
 with tab_sri:
     def bloque_sri(titulo, tipo_filtro, key):
         st.subheader(titulo)
-        c1, c2 = st.columns([3, 1])
-        with c1: up = st.file_uploader(f"TXT {titulo}", type=["txt"], key=key)
-        with c2: 
-            st.write("")
-            st.write("")
-            descargar_pdfs = st.checkbox("Incluir PDFs", key=f"chk_{key}", help="Más lento")
-
+        up = st.file_uploader(f"TXT {titulo}", type=["txt"], key=key)
         if up and st.button(f"Descargar {titulo}", key=f"b_{key}"):
-            try: content = up.read().decode("latin-1")
-            except: content = up.read().decode("utf-8", errors="ignore")
-            claves = list(dict.fromkeys(re.findall(r'\d{49}', content)))
-            
+            claves = list(dict.fromkeys(re.findall(r'\d{49}', up.read().decode("latin-1"))))
             if claves:
                 registrar_actividad(st.session_state.usuario_actual, f"INICIÓ DESCARGA SRI {titulo}", len(claves))
                 bar = st.progress(0); status = st.empty(); lst = []
+                zip_buffer = io.BytesIO()
                 
-                zip_buffer_xml = io.BytesIO()
-                zip_buffer_pdf = io.BytesIO()
-                count_xml, count_pdf = 0, 0
-                
-                with zipfile.ZipFile(zip_buffer_xml, "a", zipfile.ZIP_DEFLATED) as zf_xml:
-                    zf_pdf = zipfile.ZipFile(zip_buffer_pdf, "a", zipfile.ZIP_DEFLATED) if descargar_pdfs else None
-                    
+                with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zf:
                     for i, cl in enumerate(claves):
-                        status.text(f"Procesando {i+1}/{len(claves)}: {cl[-8:]}")
-                        # 1. XML
                         try:
-                            soap_body = f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.autorizacion"><soapenv:Body><ec:autorizacionComprobante><claveAccesoComprobante>{cl}</claveAccesoComprobante></ec:autorizacionComprobante></soapenv:Body></soapenv:Envelope>'
-                            r = requests.post(URL_WS, data=soap_body, headers=HEADERS_WS, verify=False, timeout=5)
+                            r = requests.post(URL_WS, data=f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.autorizacion"><soapenv:Body><ec:autorizacionComprobante><claveAccesoComprobante>{cl}</claveAccesoComprobante></ec:autorizacionComprobante></soapenv:Body></soapenv:Envelope>', headers=HEADERS_WS, verify=False, timeout=5)
                             if r.status_code==200 and "<autorizaciones>" in r.text: 
-                                zf_xml.writestr(f"{cl}.xml", r.text)
-                                count_xml += 1
+                                zf.writestr(f"{cl}.xml", r.text)
                                 d = extraer_datos_robusto(io.BytesIO(r.content))
                                 if d:
                                     if tipo_filtro == "RET" and d["TIPO"] == "RET": lst.append(d)
                                     elif tipo_filtro == "NC" and d["TIPO"] == "NC": lst.append(d)
                                     elif tipo_filtro == "FC" and d["TIPO"] in ["FC","LC"]: lst.append(d)
                         except: pass
-
-                        # 2. PDF
-                        if descargar_pdfs:
-                            pdf = descargar_pdf_publico(cl)
-                            if pdf:
-                                zf_pdf.writestr(f"{cl}.pdf", pdf)
-                                count_pdf += 1
-                            time.sleep(0.5) # Pausa seguridad
                         bar.progress((i+1)/len(claves))
-                    
-                    if zf_pdf: zf_pdf.close()
-
+                        status.text(f"Procesando {i+1}/{len(claves)}")
+                
                 if lst: 
-                    st.success(f"✅ Proceso Finalizado.")
-                    col1, col2, col3 = st.columns(3)
-                    with col1: st.download_button(f"📦 XMLs {titulo}", zip_buffer_xml.getvalue(), f"{titulo}_XML.zip")
-                    with col2: st.download_button(f"📊 Excel {titulo}", generar_excel_multiexcel(data_sri_lista=lst, sri_mode=tipo_filtro), f"{titulo}.xlsx")
-                    with col3:
-                        if descargar_pdfs and count_pdf > 0: st.download_button(f"📄 PDFs {titulo}", zip_buffer_pdf.getvalue(), f"{titulo}_PDF.zip")
-                        elif descargar_pdfs: st.warning("No se bajaron PDFs")
-                else: st.warning("No se encontraron documentos válidos.")
+                    st.success(f"✅ Completado. {len(lst)} documentos procesados.")
+                    registrar_actividad(st.session_state.usuario_actual, f"GENERÓ EXCEL SRI {titulo}", len(lst))
+                    c1, c2 = st.columns(2)
+                    with c1: st.download_button(f"📦 ZIP XMLs {titulo}", zip_buffer.getvalue(), f"{titulo}.zip")
+                    with c2: st.download_button(f"📊 Excel {titulo}", generar_excel_multiexcel(data_sri_lista=lst, sri_mode=tipo_filtro), f"{titulo}.xlsx")
+                else:
+                    st.warning("No se encontraron documentos válidos para este módulo.")
 
     s1, s2, s3 = st.tabs(["Facturas", "Notas Crédito", "Retenciones"])
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
+
 
