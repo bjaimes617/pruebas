@@ -412,82 +412,139 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
 
     return output.getvalue()
 
-# --- 7. INTERFAZ (CORREGIDA) ---
-st.title("🚀 RAPIDITO AI - Portal Contable")
+# ==========================================
+# --- 7. INTERFAZ (SÓLO COPIAR Y PEGAR) ---
+# ==========================================
 
+st.title(f"🚀 RAPIDITO AI - {st.session_state.get('usuario_actual', 'Portal Contable')}")
+
+# --- BARRA LATERAL (SIDEBAR) REORGANIZADA ---
 with st.sidebar:
     st.header("⚙️ Panel de Control")
+    
+    # 1. BOTÓN NUEVO INFORME
     if st.button("🧹 NUEVO INFORME", type="primary", use_container_width=True):
         st.session_state.id_proceso += 1
-        st.session_state.data_compras_cache, st.session_state.data_ventas_cache = [], []
+        st.session_state.data_compras_cache = []
+        st.session_state.data_ventas_cache = []
         st.rerun()
+    
     st.markdown("---")
-    if st.session_state.usuario_actual == "GABRIEL":
+
+    # 2. CONFIGURACIÓN MAESTRO (Sólo visible para GABRIEL)
+    if st.session_state.get("usuario_actual") == "GABRIEL":
         st.subheader("🔑 Master Config")
-        up_xls = st.file_uploader("Actualizar JSON", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
+        up_xls = st.file_uploader("Actualizar JSON (Excel)", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
         if up_xls:
             df = pd.read_excel(up_xls)
+            df.columns = [c.upper().strip() for c in df.columns]
             for _, r in df.iterrows():
                 nm = str(r.get("NOMBRE","")).upper().strip()
-                if nm: st.session_state.memoria["empresas"][nm] = {"DETALLE":str(r.get("DETALLE","OTROS")).upper(),"MEMO":str(r.get("MEMO","PROFESIONAL")).upper()}
-            guardar_memoria(); st.success("Guardado.")
+                if nm: 
+                    st.session_state.memoria["empresas"][nm] = {
+                        "DETALLE": str(r.get("DETALLE","OTROS")).upper(),
+                        "MEMO": str(r.get("MEMO","PROFESIONAL")).upper()
+                    }
+            guardar_memoria()
+            st.success("Memoria actualizada.")
+            registrar_actividad(st.session_state.usuario_actual, "ACTUALIZÓ MEMORIA")
         st.markdown("---")
-    st.subheader("📬 Sugerencias")
-    sug = st.text_area("Ideas:")
-    if st.button("Enviar Sugerencia", use_container_width=True):
-        if sug: registrar_actividad(st.session_state.usuario_actual, "SUGERENCIA", sugerencia=sug); st.success("¡Gracias!")
-    st.markdown("---")
-    if st.button("🚪 Cerrar Sesión", use_container_width=True):
-        st.session_state.autenticado = False; st.rerun()
 
-# CUERPO PRINCIPAL
+    # 3. BUZÓN DE SUGERENCIAS
+    st.subheader("📬 Sugerencias")
+    sug_text = st.text_area("¿Cómo podemos mejorar?", key="txt_sugerencia")
+    if st.button("Enviar Sugerencia", use_container_width=True):
+        if sug_text:
+            with st.spinner("Enviando..."):
+                exito = registrar_actividad(st.session_state.usuario_actual, accion="ENVIÓ SUGERENCIA", sugerencia=sug_text)
+                time.sleep(0.5) 
+            if exito: st.success("¡Gracias! Registrado.")
+            else: st.error("No se pudo enviar.")
+        else: st.warning("Escribe algo primero.")
+
+    st.markdown("---")
+
+    # 4. BOTÓN CERRAR SESIÓN
+    if st.button("🚪 Cerrar Sesión", use_container_width=True):
+        st.session_state.autenticado = False
+        st.rerun()
+
+# --- CUERPO PRINCIPAL (INVITACIONES Y PROCESAMIENTO) ---
+
 st.subheader("💎 Gana Meses PRO")
 inv = st.session_state.invitaciones_disponibles
+st.write(f"Tienes **{inv}** pases VIP disponibles.")
+
 if inv > 0:
-    with st.expander(f"🎁 Regalar Invitación ({inv} pases)"):
-        email = st.text_input("Email colega")
+    with st.expander("🎁 Regalar Invitación"):
+        nuevo_email = st.text_input("Email de tu colega")
         if st.button("Generar Pase"):
-            resp = conectar_api({"accion": "INVITAR", "usuario": st.session_state.usuario_actual, "invitado": email})
-            if resp.get("exito"):
-                msg = urllib.parse.quote(f"🎁 ¡Regalo! Pase exclusivo *RAPIDITO AI*.\n👤 Usuario: {email}\n🔑 Clave: Rapidito2026\n👉 https://pruebas1998.streamlit.app")
-                st.markdown(f'<a href="https://wa.me/?text={msg}" target="_blank"><button style="background-color:#25D366;color:white;width:100%;font-weight:bold;padding:12px;border-radius:8px;border:none;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
+            if nuevo_email and "@" in nuevo_email:
+                with st.spinner("Creando cuenta..."):
+                    resp_inv = conectar_api({"accion": "INVITAR", "usuario": st.session_state.usuario_actual, "invitado": nuevo_email})
+                    if resp_inv.get("exito"):
+                        st.session_state.invitaciones_disponibles = resp_inv.get("nuevo_saldo")
+                        st.success("¡Invitación Exitosa!")
+                        
+                        texto_ws = f"🎁 *¡Hola! Te tengo un regalo.*\n\nTe acabo de generar un pase para *RAPIDITO AI*. 🚀\n\n👤 Usuario: {nuevo_email}\n🔑 Clave: Rapidito2026\n👉 https://pruebas1998.streamlit.app"
+                        texto_codificado = urllib.parse.quote(texto_ws)
+                        link_ws = f"https://wa.me/?text={texto_codificado}"
+                        st.markdown(f'<a href="{link_ws}" target="_blank"><button style="background-color:#25D366;color:white;border:none;padding:12px;border-radius:8px;width:100%;font-weight:bold;cursor:pointer;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
+            else: st.warning("Escribe un correo válido.")
 
 tab_xml, tab_sri = st.tabs(["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (TXT)"])
 
 with tab_xml:
     st1, st2, st3 = st.tabs(["🛒 Compras y NC", "💰 Ventas y Retenciones", "📑 Informe Integral"])
+    
     with st1:
-        up_c = st.file_uploader("Compras (XML/ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"c_{st.session_state.id_proceso}")
+        up_c = st.file_uploader("Subir Compras (XML o ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"c_{st.session_state.id_proceso}")
         if up_c and st.button("Procesar Compras"):
-            data = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up_c)]
+            xmls = procesar_archivos_entrada(up_c)
+            data = [extraer_datos_robusto(x) for x in xmls]
             data = [d for d in data if d and d["TIPO"] in ["FC","NC"]]
-            st.session_state.data_compras_cache = data
-            st.download_button("📥 Excel Compras", generar_excel_multiexcel(data_compras=data), "Compras.xlsx")
+            if data:
+                st.session_state.data_compras_cache = data
+                st.success(f"{len(data)} facturas procesadas.")
+                st.download_button("📥 Descargar Excel Compras", generar_excel_multiexcel(data_compras=data), f"Compras_{datetime.now().strftime('%H%M')}.xlsx")
+
     with st2:
-        up_v = st.file_uploader("Ventas (XML/ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"v_{st.session_state.id_proceso}")
+        up_v = st.file_uploader("Subir Ventas/Ret (XML o ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"v_{st.session_state.id_proceso}")
         if up_v and st.button("Procesar Ventas"):
-            raw = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up_v)]
+            xmls = procesar_archivos_entrada(up_v)
+            raw = [extraer_datos_robusto(x) for x in xmls]
             data = procesar_ventas_con_retenciones([d for d in raw if d])
-            st.session_state.data_ventas_cache = data
-            st.download_button("📥 Excel Ventas", generar_excel_multiexcel(data_ventas_ret=data), "Ventas.xlsx")
+            if data:
+                st.session_state.data_ventas_cache = data
+                st.success(f"{len(data)} ventas integradas.")
+                st.download_button("📥 Descargar Excel Ventas", generar_excel_multiexcel(data_ventas_ret=data), f"Ventas_{datetime.now().strftime('%H%M')}.xlsx")
+
     with st3:
-        if st.button("Generar Informe Integral"):
+        st.info("Esta opción genera un solo archivo con: Compras, Ventas, Reporte Anual y Proyección.")
+        if st.button("🚀 GENERAR INFORME INTEGRAL"):
             if st.session_state.data_compras_cache and st.session_state.data_ventas_cache:
-                st.download_button("📥 INFORME INTEGRAL", generar_excel_multiexcel(st.session_state.data_compras_cache, st.session_state.data_ventas_cache), "Integral.xlsx")
-            else: st.warning("Procese Compras y Ventas primero.")
+                excel_data = generar_excel_multiexcel(st.session_state.data_compras_cache, st.session_state.data_ventas_cache)
+                st.download_button("📥 DESCARGAR INFORME MAESTRO", excel_data, f"INTEGRAL_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx")
+            else:
+                st.error("Primero procesa 'Compras' y 'Ventas' en las pestañas anteriores.")
 
 with tab_sri:
-    up_txt = st.file_uploader("TXT SRI", type=["txt"])
-    if up_txt and st.button("Descarga SRI Masiva"):
+    st.subheader("📡 Conexión Directa SRI")
+    up_txt = st.file_uploader("Subir TXT de Claves (49 dígitos)", type=["txt"], key="sri_txt")
+    if up_txt and st.button("Descargar Masivamente"):
         claves = list(dict.fromkeys(re.findall(r'\d{49}', up_txt.read().decode("latin-1"))))
-        bar, lst = st.progress(0), []
-        for i, cl in enumerate(claves):
-            try:
-                r = requests.post(URL_WS, data=f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.autorizacion"><soapenv:Body><ec:autorizacionComprobante><claveAccesoComprobante>{cl}</claveAccesoComprobante></ec:autorizacionComprobante></soapenv:Body></soapenv:Envelope>', headers=HEADERS_WS, verify=False, timeout=5)
-                if "<autorizaciones>" in r.text:
-                    d = extraer_datos_robusto(io.BytesIO(r.content))
-                    if d: lst.append(d)
-            except: pass
-            bar.progress((i+1)/len(claves))
-       if lst: st.download_button("📊 Excel SRI Completo", generar_excel_multiexcel(data_sri_lista=lst), "SRI_Masivo.xlsx")
-
+        if claves:
+            bar, status = st.progress(0), st.empty()
+            lst = []
+            for i, cl in enumerate(claves):
+                try:
+                    r = requests.post(URL_WS, data=f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.autorizacion"><soapenv:Body><ec:autorizacionComprobante><claveAccesoComprobante>{cl}</claveAccesoComprobante></ec:autorizacionComprobante></soapenv:Body></soapenv:Envelope>', headers=HEADERS_WS, verify=False, timeout=5)
+                    if "<autorizaciones>" in r.text:
+                        d = extraer_datos_robusto(io.BytesIO(r.content))
+                        if d: lst.append(d)
+                except: pass
+                bar.progress((i+1)/len(claves))
+                status.text(f"Procesando {i+1} de {len(claves)}...")
+            if lst:
+                st.success("Descarga completada.")
+                st.download_button("📊 Descargar Excel SRI", generar_excel_multiexcel(data_sri_lista=lst), "SRI_Masivo.xlsx")
