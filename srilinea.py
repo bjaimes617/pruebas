@@ -478,7 +478,7 @@ Olvídate de digitar facturas, esta IA lo hace por ti.
 
 👉 *Entra aquí:* pruebas1998.streamlit.app
 
-¡Pruébalo y me cuentas! 😎""""
+¡Pruébalo y me cuentas! 😎"""
                             link_ws = f"https://wa.me/?text={texto_ws.replace(' ', '%20')}"
                             
                             st.markdown(f"""
@@ -598,6 +598,7 @@ with tab_sri:
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
+
 
 
 
