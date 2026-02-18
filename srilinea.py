@@ -11,6 +11,7 @@ import urllib3
 from datetime import datetime
 import xlsxwriter
 import time
+import urllib.parse
 
 # --- 1. CONFIGURACIÓN Y SEGURIDAD ---
 st.set_page_config(page_title="RAPIDITO AI - Portal Contable", layout="wide", page_icon="📊")
@@ -445,29 +446,30 @@ with st.sidebar:
     st.markdown("---")
     
     # --- MÓDULO DE EXPANSIÓN VIRAL ---
-    st.subheader("💎 Gana Meses PRO")
-    inv = st.session_state.invitaciones_disponibles
-    st.write(f"Tienes **{inv}** pases VIP disponibles.")
-    
-    if inv > 0:
-        with st.expander("🎁 Regalar Invitación"):
-            nuevo_email = st.text_input("Email de tu colega")
-            if st.button("Generar Pase"):
-                if nuevo_email and "@" in nuevo_email:
-                    with st.spinner("Creando cuenta..."):
-                        # Llamada para crear usuario y restar saldo
-                        resp_inv = conectar_api({
-                            "accion": "INVITAR", 
-                            "usuario": st.session_state.usuario_actual, 
-                            "invitado": nuevo_email
-                        })
+  st.subheader("💎 Gana Meses PRO")
+inv = st.session_state.invitaciones_disponibles
+st.write(f"Tienes **{inv}** pases VIP disponibles.")
+
+if inv > 0:
+    with st.expander("🎁 Regalar Invitación"):
+        nuevo_email = st.text_input("Email de tu colega")
+        
+        if st.button("Generar Pase"):
+            if nuevo_email and "@" in nuevo_email:
+                with st.spinner("Creando cuenta..."):
+                    # Llamada para crear usuario y restar saldo
+                    resp_inv = conectar_api({
+                        "accion": "INVITAR", 
+                        "usuario": st.session_state.usuario_actual, 
+                        "invitado": nuevo_email
+                    })
+                    
+                    if resp_inv.get("exito"):
+                        st.session_state.invitaciones_disponibles = resp_inv.get("nuevo_saldo")
+                        st.success("¡Invitación Exitosa!")
                         
-                        if resp_inv.get("exito"):
-                            st.session_state.invitaciones_disponibles = resp_inv.get("nuevo_saldo")
-                            st.success("¡Invitación Exitosa!")
-                            
-                            # LINK DE WHATSAPP
-                            texto_ws = f"""🎁 *¡Hola! Te tengo un regalo.*
+                        # --- DEFINICIÓN DEL TEXTO ---
+                        texto_ws = f"""🎁 *¡Hola! Te tengo un regalo.*
 
 Te acabo de generar un pase exclusivo para *RAPIDITO AI*. 🚀
 Olvídate de digitar facturas, esta IA lo hace por ti.
@@ -479,22 +481,26 @@ Olvídate de digitar facturas, esta IA lo hace por ti.
 👉 *Entra aquí:* pruebas1998.streamlit.app
 
 ¡Pruébalo y me cuentas! 😎"""
-                            link_ws = f"https://wa.me/?text={texto_ws.replace(' ', '%20')}"
-                            
-                            st.markdown(f"""
-                            <a href="{link_ws}" target="_blank">
-                                <button style="background-color:#25D366;color:white;border:none;padding:10px;border-radius:5px;width:100%;font-weight:bold;">
-                                    📲 Enviar por WhatsApp
-                                </button>
-                            </a>
-                            """, unsafe_allow_html=True)
-                        else:
-                            st.error(resp_inv.get("mensaje"))
-                else:
-                    st.warning("Escribe un correo válido.")
-    else:
-        st.warning("⛔ Agotaste tus invitaciones.")
-        st.caption("Procesa más de 100 XMLs esta semana para ganar 2 pases más.")
+
+                        # --- CORRECCIÓN AQUÍ: USAR URLLIB ---
+                        # Esto convierte los Enters en %0A y los emojis en código seguro
+                        texto_codificado = urllib.parse.quote(texto_ws)
+                        link_ws = f"https://wa.me/?text={texto_codificado}"
+                        
+                        st.markdown(f"""
+                        <a href="{link_ws}" target="_blank">
+                            <button style="background-color:#25D366;color:white;border:none;padding:12px;border-radius:8px;width:100%;font-weight:bold;font-size:16px;cursor:pointer;">
+                                📲 Enviar por WhatsApp
+                            </button>
+                        </a>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.error(resp_inv.get("mensaje"))
+            else:
+                st.warning("Escribe un correo válido.")
+else:
+    st.warning("⛔ Agotaste tus invitaciones.")
+    st.caption("Procesa más de 100 XMLs esta semana para ganar 2 pases más.")
 
     st.markdown("---")
     if st.session_state.usuario_actual == "GABRIEL":
@@ -598,6 +604,7 @@ with tab_sri:
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
+
 
 
 
