@@ -16,46 +16,72 @@ import time
 st.set_page_config(page_title="RAPIDITO AI - Portal Contable", layout="wide", page_icon="📊")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# --- ENLACES DE CONEXIÓN ---
 URL_WS = "https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl"
 HEADERS_WS = {"Content-Type": "text/xml;charset=UTF-8","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"}
+
+# El CSV de lectura (Respaldo)
 URL_SHEET = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkIGy-ovamvkCQjnjuT9kV7BndRqOeZlrEUEy9BZUH-oGISXG2a_own9BMbzTV21giZXgBqGxlTjkp/pub?output=csv"
 
-# --- LOGGING Y SUGERENCIAS ---
+# ⚠️ PEGA AQUÍ LA URL DE TU GOOGLE APPS SCRIPT (Termina en /exec)
+URL_API_VIRAL = "https://script.google.com/macros/s/AKfycbwgB5E0LlpjeYzF4gWhc63piI5Oxrk72cwRx1kZN9ELf7e6v31dY1BQ9SGYVzAV_kjV/exec" 
+
+# --- CONEXIÓN AL CEREBRO VIRAL (Google Apps Script) ---
+def conectar_api(payload):
+    """Función para hablar con Google Sheets (Login e Invitaciones)"""
+    try:
+        # Si la URL no está configurada, retornamos error simulado
+        if "TU_URL" in URL_API_VIRAL: 
+            return {"exito": False, "mensaje": "Falta configurar URL_API_VIRAL en el código."}
+        
+        r = requests.post(URL_API_VIRAL, json=payload, timeout=10)
+        return r.json()
+    except Exception as e:
+        return {"exito": False, "mensaje": f"Error de conexión: {str(e)}"}
+
+# --- LOGGING Y SUGERENCIAS (Legacy) ---
 def registrar_actividad(usuario, accion, cantidad=None, sugerencia=None):
-    URL_PUENTE = "https://script.google.com/macros/s/AKfycbyk0CWehcUec47HTGMjqsCs0sTKa_9J3ZU_Su7aRxfwmNa76-dremthTuTPf-FswZY/exec"
+    # Usamos el mismo script para loguear actividad si tiene esa función, 
+    # o mantenemos la lógica anterior si es un script separado.
+    # Por ahora mantenemos compatibilidad con el script de logging original si existe.
+    URL_LOGGING = "https://script.google.com/macros/s/AKfycbyk0CWehcUec47HTGMjqsCs0sTKa_9J3ZU_Su7aRxfwmNa76-dremthTuTPf-FswZY/exec"
     detalle_accion = f"{accion} ({cantidad} XMLs)" if cantidad is not None else accion
     payload = {"usuario": str(usuario), "accion": str(detalle_accion)}
     if sugerencia: payload["sugerencia"] = str(sugerencia)
     try: 
-        requests.post(URL_PUENTE, json=payload, timeout=8)
+        requests.post(URL_LOGGING, json=payload, timeout=5)
         return True
     except: return False
 
-def cargar_usuarios():
-    try:
-        df = pd.read_csv(URL_SHEET)
-        df.columns = [c.lower().strip() for c in df.columns]
-        return {str(row['usuario']).strip(): str(row['clave']).strip() for _, row in df.iterrows() if str(row['estado']).lower().strip() == 'activo'}
-    except: return {}
-
-# --- 2. SISTEMA DE LOGIN Y ESTADO ---
+# --- 2. SISTEMA DE LOGIN VIRAL Y ESTADO ---
 if "autenticado" not in st.session_state: st.session_state.autenticado = False
 if "id_proceso" not in st.session_state: st.session_state.id_proceso = 0
 if "data_compras_cache" not in st.session_state: st.session_state.data_compras_cache = []
 if "data_ventas_cache" not in st.session_state: st.session_state.data_ventas_cache = []
+if "invitaciones_disponibles" not in st.session_state: st.session_state.invitaciones_disponibles = 0
 
 if not st.session_state.autenticado:
-    st.sidebar.title("🔐 Acceso Clientes")
-    user = st.sidebar.text_input("Usuario")
+    st.sidebar.title("🔐 Acceso RAPIDITO")
+    st.sidebar.markdown("---")
+    user = st.sidebar.text_input("Usuario (Email)")
     password = st.sidebar.text_input("Contraseña", type="password")
+    
     if st.sidebar.button("Iniciar Sesión"):
-        db = cargar_usuarios()
-        if user in db and db[user] == password:
-            st.session_state.autenticado = True
-            st.session_state.usuario_actual = user
-            registrar_actividad(user, "ENTRÓ AL PORTAL")
-            st.rerun()
-        else: st.sidebar.error("Usuario o contraseña incorrectos.")
+        with st.spinner("Verificando credenciales..."):
+            # LLAMADA A LA API VIRAL
+            resp = conectar_api({"accion": "LOGIN", "usuario": user.strip(), "clave": password.strip()})
+            
+            if resp.get("exito"):
+                st.session_state.autenticado = True
+                st.session_state.usuario_actual = user.strip()
+                st.session_state.invitaciones_disponibles = resp.get("invitaciones", 0)
+                registrar_actividad(user, "ENTRÓ AL PORTAL")
+                st.rerun()
+            else:
+                st.sidebar.error(f"Error: {resp.get('mensaje', 'Credenciales incorrectas')}")
+    
+    st.sidebar.markdown("---")
+    st.sidebar.info("ℹ️ Este sistema es exclusivo por invitación. Pídele acceso a un colega contador.")
     st.stop()
 
 # --- 3. MEMORIA DE APRENDIZAJE ---
@@ -70,7 +96,6 @@ def guardar_memoria():
 
 # --- HELPER: DESCOMPRIMIR ZIP Y XMLs ---
 def procesar_archivos_entrada(lista_archivos):
-    """Recibe lista de UploadedFile (XML o ZIP) y devuelve lista de BytesIO solo con XMLs"""
     xmls_procesables = []
     for file in lista_archivos:
         if file.name.lower().endswith('.xml'):
@@ -92,9 +117,8 @@ def extraer_datos_robusto(xml_file):
         root = tree.getroot()
         xml_data = None
         
-        # Desempaquetar SOAP (Búsqueda agresiva)
+        # Desempaquetar SOAP
         for elem in root.iter():
-            # Buscamos etiquetas que parezcan 'comprobante' y tengan contenido XML dentro
             if 'comprobante' in elem.tag.lower() and elem.text and ("<" in elem.text or "&lt;" in elem.text):
                 try:
                     clean_text = re.sub(r'<\?xml.*?\?>', '', elem.text).strip()
@@ -102,17 +126,15 @@ def extraer_datos_robusto(xml_file):
                     break
                 except: continue
         
-        # Si no estaba en SOAP, usamos la raíz
         if xml_data is None: xml_data = root
 
-        # Detección del tipo de documento
+        # Tipo doc
         root_tag = xml_data.tag.lower()
         if 'notacredito' in root_tag: tipo_doc = "NC"
         elif 'comprobanteretencion' in root_tag: tipo_doc = "RET"
         elif 'liquidacioncompra' in root_tag: tipo_doc = "LC"
         else: tipo_doc = "FC" 
 
-        # Funciones auxiliares seguras
         def buscar(tags):
             for t in tags:
                 f = xml_data.find(f".//{t}")
@@ -127,7 +149,6 @@ def extraer_datos_robusto(xml_file):
         razon_social = buscar(["razonSocial"]).upper()
         ruc_emisor = buscar(["ruc"])
         
-        # Formato de factura
         estab = buscar(["estab"]) or "000"
         pto = buscar(["ptoEmi"]) or "000"
         sec = buscar(["secuencial"]) or "000000000"
@@ -143,7 +164,6 @@ def extraer_datos_robusto(xml_file):
                 mes_nombre = meses_dict.get(fecha_emision.split('/')[1], "DESCONOCIDO")
             except: pass
 
-        # Datos del Cliente/Sujeto Retenido
         ruc_cliente = buscar(["identificacionComprador", "identificacionSujetoRetenido"])
         nombre_cliente = buscar(["razonSocialComprador", "razonSocialSujetoRetenido"]).upper()
 
@@ -154,13 +174,11 @@ def extraer_datos_robusto(xml_file):
             "CONTRIBUYENTE": ruc_cliente, "RUC CLIENTE": ruc_cliente, "CLIENTE": nombre_cliente 
         }
 
-        # === LÓGICA RETENCIONES (VERDE) ===
         if tipo_doc == "RET":
             rt_renta, rt_iva = 0.0, 0.0
             base_renta, base_iva = 0.0, 0.0
             sustento_formateado = ""
             
-            # 1. Búsqueda segura del sustento
             doc_sus_node = xml_data.find(".//numDocSustento")
             doc_sus_raw = doc_sus_node.text.strip() if (doc_sus_node is not None and doc_sus_node.text) else ""
             
@@ -171,15 +189,12 @@ def extraer_datos_robusto(xml_file):
                 elif len(doc_sus_raw.split('-')) == 3:
                     sustento_formateado = doc_sus_raw
 
-            # 2. Búsqueda de valores (Compatible V1 y V2)
             lista_retenciones = xml_data.findall(".//impuesto") + xml_data.findall(".//retencion")
 
             for item in lista_retenciones:
-                # Código seguro
                 cod_node = item.find("codigo")
                 cod = cod_node.text.strip() if (cod_node is not None and cod_node.text) else ""
                 
-                # Extracción segura de valores numéricos
                 try:
                     val_node = item.find("valorRetenido")
                     val_txt = val_node.text.strip() if (val_node is not None and val_node.text) else "0"
@@ -200,25 +215,15 @@ def extraer_datos_robusto(xml_file):
                     base_iva += base
 
             base_data.update({
-                "ruc_recep": ruc_cliente,
-                "nomrecep": nombre_cliente,
-                "fechaemi": fecha_emision,
-                "razonsocial": razon_social,
-                "ruc_emisor": ruc_emisor,
-                "numfact": sustento_formateado, 
-                "numreten": num_fact_completo,
-                "baserenta": base_renta,
-                "rt_renta": rt_renta,
-                "baseiva": base_iva,
-                "rt_iva": rt_iva,
-                "numautori": num_autori,
+                "ruc_recep": ruc_cliente, "nomrecep": nombre_cliente, "fechaemi": fecha_emision,
+                "razonsocial": razon_social, "ruc_emisor": ruc_emisor, "numfact": sustento_formateado, 
+                "numreten": num_fact_completo, "baserenta": base_renta, "rt_renta": rt_renta,
+                "baseiva": base_iva, "rt_iva": rt_iva, "numautori": num_autori,
                 "fecautori": buscar(["fechaAutorizacion"]) or fecha_emision,
-                "SUSTENTO": sustento_formateado,
-                "TOTAL RET": rt_renta + rt_iva
+                "SUSTENTO": sustento_formateado, "TOTAL RET": rt_renta + rt_iva
             })
             return base_data
 
-        # === LÓGICA FACTURAS / NC / LC ===
         else: 
             m = -1 if tipo_doc == "NC" else 1
             total = buscar_float(["importeTotal", "total", "valorModificado"]) * m
@@ -248,7 +253,6 @@ def extraer_datos_robusto(xml_file):
                          otra_base += base; otro_monto_iva += valor
                 except: continue 
 
-            # Memoria
             if tipo_doc == "NC":
                 detalle_final, memo_final = "", ""
             else:
@@ -281,35 +285,31 @@ def procesar_ventas_con_retenciones(lista_datos_crudos):
         if dato["TIPO"] == "FC": 
             ventas.append(dato)
         elif dato["TIPO"] == "RET" and dato.get("SUSTENTO"): 
-            # Normalizar clave de sustento por si acaso
             retenciones_map[dato["SUSTENTO"]] = dato
 
     ventas_integradas = []
     for venta in ventas:
-        num_fact = venta["N. FACTURA"] # Formato esperado: 001-001-000000123
-        ret_asociada = retenciones_map.get(num_fact, {}) # BUSCAR POR NUMERO DE FACTURA EXACTO
+        num_fact = venta["N. FACTURA"] 
+        ret_asociada = retenciones_map.get(num_fact, {}) 
         
         fila = {
-            # AZUL (Venta)
             "MES": venta.get("MES"), "FECHA": venta.get("FECHA"), "N. FACTURA": num_fact,
             "RUC": venta.get("RUC CLIENTE"), "CLIENTE": venta.get("CLIENTE"),
             "DETALLE": "SERVICIOS", "MEMO": "PROFESIONAL", "MONTO REEMBOLS": 0.0,
             "BASE. 0": venta.get("BASE. 0", 0), "BASE. 12 / 15": venta.get("BASE. 12 / 15", 0),
             "IVA": venta.get("IVA.", 0), "TOTAL": venta.get("TOTAL", 0),
             
-            # VERDE (Retención Cruzada)
-            "FECHA RET": ret_asociada.get("fechaemi", ""), # Usar fechaemi del dict de retencion
+            "FECHA RET": ret_asociada.get("fechaemi", ""),
             "N° RET": ret_asociada.get("numreten", ""),
             "N° AUTORIZACIÓN": ret_asociada.get("numautori", ""),
             "RET RENTA": ret_asociada.get("rt_renta", 0), 
             "RET IVA": ret_asociada.get("rt_iva", 0),
-            "ISD": 0.0, 
-            "TOTAL RET": ret_asociada.get("TOTAL RET", 0)
+            "ISD": 0.0, "TOTAL RET": ret_asociada.get("TOTAL RET", 0)
         }
         ventas_integradas.append(fila)
     return ventas_integradas
 
-# --- 6. GENERADOR MULTI-EXCEL MAESTRO ---
+# --- 6. GENERADOR MULTI-EXCEL MAESTRO (CON MARCA VIRAL) ---
 def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_lista=None, sri_mode=None):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -321,6 +321,9 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
         f_num = wb.add_format({'num_format':'_-$ * #,##0.00_-','border':1})
         f_tot = wb.add_format({'bold':True,'num_format':'_-$ * #,##0.00_-','border':1,'bg_color':'#EFEFEF'})
         
+        # --- MARCA DE AGUA (ESTRATEGIA VIRAL) ---
+        texto_pie = "&LGenerado por RAPIDITO AI&RConsigue tu cuenta gratis en: rapidito.ec"
+
         # === MODO SRI (Descarga Masiva) ===
         if sri_mode:
             df = pd.DataFrame(data_sri_lista)
@@ -328,33 +331,27 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 cols = ["NOMBRE","RUC","N AUTORIZACION","FECHA","TIPO DE DOCUMENTO","N. FACTURA","MES","RUC CLIENTE","CLIENTE","PROPINAS","BASE. 0","NO OBJ IVA","BASE. 12 / 15","IVA.","TOTAL"]
                 header_fmt = f_amar; sheet_name = "NOTAS DE CREDITO"
             elif sri_mode == "RET":
-                # COLUMNAS EXACTAS DE LA IMAGEN VERDE
                 cols = ["ruc_recep", "nomrecep", "fechaemi", "razonsocial", "ruc_emisor", "numfact", "numreten", "baserenta", "rt_renta", "baseiva", "rt_iva", "numautori", "fecautori"]
                 header_fmt = f_verd; sheet_name = "RETENCIONES"
             else: 
                 cols = ["MES","FECHA","N. FACTURA","TIPO DE DOCUMENTO","RUC","CONTRIBUYENTE","NOMBRE","DETALLE","MEMO","OTRA BASE IVA","OTRO IVA","MONTO ICE","PROPINAS","EXENTO DE IVA","NO OBJ IVA","BASE. 0","BASE. 12 / 15","IVA.","TOTAL","SUBDETALLE"]
                 header_fmt = f_azul; sheet_name = "FACTURAS"
 
-            # Rellenar faltantes y ordenar
             for c in cols: 
                 if c not in df.columns: df[c] = ""
             df = df[cols]
             
             ws = wb.add_worksheet(sheet_name)
+            ws.set_footer(texto_pie) # Agregar pie de página viral
             for i, c in enumerate(cols): ws.write(0, i, c, header_fmt)
             for r, row in enumerate(df.values, 1):
                 for c, val in enumerate(row): ws.write(r, c, val, f_num if isinstance(val, (int,float)) else wb.add_format({'border':1}))
-            
-            # Ajuste de ancho
             ws.set_column(0, len(cols)-1, 15)
-            
-            # NO return here, wait for context manager exit
 
         # === MODO MANUAL (INTEGRAL) ===
         else:
             meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"]
 
-            # HOJA COMPRAS
             if data_compras:
                 df_c = pd.DataFrame(data_compras)
                 orden_c = ["MES","FECHA","N. FACTURA","TIPO DE DOCUMENTO","RUC","CONTRIBUYENTE","NOMBRE","DETALLE","MEMO","OTRA BASE IVA","OTRO IVA","MONTO ICE","PROPINAS","EXENTO DE IVA","NO OBJ IVA","BASE. 0","BASE. 12 / 15","IVA.","TOTAL","SUBDETALLE"]
@@ -363,8 +360,8 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 df_c = df_c[orden_c]
                 
                 ws_c = wb.add_worksheet('COMPRAS')
+                ws_c.set_footer(texto_pie) # Viral
                 for i, c in enumerate(orden_c):
-                    # Amarillo para OTRA BASE hasta EXENTO (columnas especiales)
                     fmt = f_amar if i in range(9, 15) else f_azul
                     ws_c.write(0, i, c, fmt)
                 for r, row in enumerate(df_c.values, 1):
@@ -376,6 +373,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
 
                 # REPORTE ANUAL
                 ws_ra = wb.add_worksheet('REPORTE ANUAL')
+                ws_ra.set_footer(texto_pie) # Viral
                 ws_ra.set_column('A:K', 14); ws_ra.merge_range('B1:B2', "Negocios y\nServicios", f_azul)
                 cats=["VIVIENDA","SALUD","EDUCACION","ALIMENTACION","VESTIMENTA","TURISMO","NO DEDUCIBLE","SERVICIOS BASICOS"]
                 icos=["🏠","❤️","🎓","🛒","🧢","✈️","🚫","💡"]
@@ -394,7 +392,6 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 ws_ra.write(15,0,"TOTAL",f_tot)
                 for c in range(1,11): l=xlsxwriter.utility.xl_col_to_name(c); ws_ra.write_formula(15,c,f"=SUM({l}4:{l}15)",f_tot)
 
-            # HOJA VENTAS (CRUZADA)
             if data_ventas_ret:
                 df_v = pd.DataFrame(data_ventas_ret)
                 orden_v = ["MES","FECHA","N. FACTURA","RUC","CLIENTE","DETALLE","MEMO","MONTO REEMBOLS","BASE. 0","BASE. 12 / 15","IVA","TOTAL","FECHA RET","N° RET","N° AUTORIZACIÓN","RET RENTA","RET IVA","ISD","TOTAL RET"]
@@ -403,6 +400,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 df_v = df_v[orden_v]
                 
                 ws_v = wb.add_worksheet('VENTAS')
+                ws_v.set_footer(texto_pie) # Viral
                 for i, c in enumerate(orden_v): ws_v.write(0, i, c, f_verd if i >= 12 else f_azul)
                 for r, row in enumerate(df_v.values, 1):
                     for c, val in enumerate(row): ws_v.write(r, c, val, f_num if isinstance(val, (int,float)) else wb.add_format({'border':1}))
@@ -410,8 +408,8 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                 ft_v = len(df_v) + 1; ws_v.write(ft_v, 0, "TOTAL", f_tot)
                 for cidx in range(7, 19): l = xlsxwriter.utility.xl_col_to_name(cidx); ws_v.write_formula(ft_v, cidx, f"=SUM({l}2:{l}{ft_v})", f_tot)
 
-                # PROYECCION
                 ws_p = wb.add_worksheet('PROYECCION')
+                ws_p.set_footer(texto_pie) # Viral
                 ws_p.set_column('A:A', 12); ws_p.set_column('B:M', 15)
                 ws_p.merge_range('A1:D1', f"PERIODO: {datetime.now().year}", f_azul)
                 for i, h in enumerate(["VENTAS", "COMPRAS", "TOTAL"]): ws_p.write(i+2, 0, h, f_azul)
@@ -445,6 +443,49 @@ with st.sidebar:
         st.session_state.id_proceso += 1; st.session_state.data_compras_cache = []; st.session_state.data_ventas_cache = []
         st.rerun()
     st.markdown("---")
+    
+    # --- MÓDULO DE EXPANSIÓN VIRAL ---
+    st.subheader("💎 Gana Meses PRO")
+    inv = st.session_state.invitaciones_disponibles
+    st.write(f"Tienes **{inv}** pases VIP disponibles.")
+    
+    if inv > 0:
+        with st.expander("🎁 Regalar Invitación"):
+            nuevo_email = st.text_input("Email de tu colega")
+            if st.button("Generar Pase"):
+                if nuevo_email and "@" in nuevo_email:
+                    with st.spinner("Creando cuenta..."):
+                        # Llamada para crear usuario y restar saldo
+                        resp_inv = conectar_api({
+                            "accion": "INVITAR", 
+                            "usuario": st.session_state.usuario_actual, 
+                            "invitado": nuevo_email
+                        })
+                        
+                        if resp_inv.get("exito"):
+                            st.session_state.invitaciones_disponibles = resp_inv.get("nuevo_saldo")
+                            st.success("¡Invitación Exitosa!")
+                            
+                            # LINK DE WHATSAPP
+                            texto_ws = f"Hola! Te acabo de regalar un acceso a RAPIDITO AI para tus declaraciones. Tu usuario es: {nuevo_email} y tu clave temporal es: Rapidito2026. Entra aquí: rapidito-app.streamlit.app"
+                            link_ws = f"https://wa.me/?text={texto_ws.replace(' ', '%20')}"
+                            
+                            st.markdown(f"""
+                            <a href="{link_ws}" target="_blank">
+                                <button style="background-color:#25D366;color:white;border:none;padding:10px;border-radius:5px;width:100%;font-weight:bold;">
+                                    📲 Enviar por WhatsApp
+                                </button>
+                            </a>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.error(resp_inv.get("mensaje"))
+                else:
+                    st.warning("Escribe un correo válido.")
+    else:
+        st.warning("⛔ Agotaste tus invitaciones.")
+        st.caption("Procesa más de 100 XMLs esta semana para ganar 2 pases más.")
+
+    st.markdown("---")
     if st.session_state.usuario_actual == "GABRIEL":
         st.header("Master Config")
         up_xls = st.file_uploader("Cargar Excel Maestro", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
@@ -469,7 +510,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("Cerrar Sesión"):
-        registrar_actividad(st.session_state.usuario_actual, "SALIÓ"); st.session_state.autenticado = False; st.rerun()
+        st.session_state.autenticado = False; st.rerun()
 
 tab_xml, tab_sri = st.tabs(["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (TXT)"])
 
@@ -546,6 +587,3 @@ with tab_sri:
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
-
-
-
