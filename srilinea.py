@@ -467,7 +467,18 @@ with st.sidebar:
                             st.success("¡Invitación Exitosa!")
                             
                             # LINK DE WHATSAPP
-                            texto_ws = f"Hola! Te acabo de regalar un acceso a RAPIDITO AI para tus declaraciones. Tu usuario es: {nuevo_email} y tu clave temporal es: Rapidito2026. Entra aquí: rapidito-app.streamlit.app"
+                            texto_ws = f"f"""🎁 *¡Hola! Te tengo un regalo.*
+
+Te acabo de generar un pase exclusivo para *RAPIDITO AI*. 🚀
+Olvídate de digitar facturas, esta IA lo hace por ti.
+
+🔐 *Tus Credenciales de Acceso:*
+👤 Usuario: {nuevo_email}
+🔑 Clave: Rapidito2026
+
+👉 *Entra aquí:* pruebas1998.streamlit.app
+
+¡Pruébalo y me cuentas! 😎""""
                             link_ws = f"https://wa.me/?text={texto_ws.replace(' ', '%20')}"
                             
                             st.markdown(f"""
@@ -587,4 +598,5 @@ with tab_sri:
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
+
 
