@@ -317,7 +317,7 @@ with st.sidebar:
     if st.button("🚪 Cerrar Sesión", use_container_width=True):
         st.session_state.autenticado = False; st.rerun()
 
-st.subheader("💎 Gana Meses PRO")
+st.subheader("💎 Gana Meses PRO gratis invitando a 3 contadores colegas al mes")
 inv = st.session_state.invitaciones_disponibles
 if inv > 0:
     with st.expander(f"🎁 Regalar Invitación ({inv} disponibles)"):
@@ -380,3 +380,4 @@ with tab_sri:
     with s1: bloque_sri_persistente("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri_persistente("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri_persistente("Retenciones", "RET", "sri_ret")
+
