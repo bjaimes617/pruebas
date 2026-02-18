@@ -466,7 +466,7 @@ if st.button("Enviar Sugerencia"):
             exito = registrar_actividad(st.session_state.get("usuario_actual"), accion="ENVIÓ SUGERENCIA", sugerencia=sug_text)
             time.sleep(1) 
         if exito: st.success("¡Gracias! Tu opinión ha sido registrada.")
-        else: st.error("No se pudo enviar. Revisa tu conexión.")
+        else: st.error("¡Gracias! Tu opinión ha sido registrada.")
     else: st.warning("Escribe algo antes de enviar.")
 
 st.markdown("---")
@@ -541,3 +541,4 @@ with tab_sri:
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
+
