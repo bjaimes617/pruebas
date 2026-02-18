@@ -24,7 +24,7 @@ HEADERS_WS = {"Content-Type": "text/xml;charset=UTF-8","User-Agent": "Mozilla/5.
 URL_SHEET = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkIGy-ovamvkCQjnjuT9kV7BndRqOeZlrEUEy9BZUH-oGISXG2a_own9BMbzTV21giZXgBqGxlTjkp/pub?output=csv"
 
 # ⚠️ PEGA AQUÍ LA URL DE TU GOOGLE APPS SCRIPT (Termina en /exec)
-URL_API_VIRAL = "https://script.google.com/macros/s/AKfycbwgB5E0LlpjeYzF4gWhc63piI5Oxrk72cwRx1kZN9ELf7e6v31dY1BQ9SGYVzAV_kjV/exec" 
+URL_API_VIRAL = "https://script.google.com/macros/s/AKfycbz3vRq203m7vcdor30hJiXuAGNGr8n_kM2dCpf63LW4KhaeY9wqAijBC473AwywYes/exec" 
 
 # --- CONEXIÓN AL CEREBRO VIRAL (Google Apps Script) ---
 def conectar_api(payload):
@@ -587,3 +587,4 @@ with tab_sri:
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
+
