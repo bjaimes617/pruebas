@@ -412,13 +412,12 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
 
     return output.getvalue()
 
-# --- 7. INTERFAZ ---
+# --- 7. INTERFAZ (CORREGIDA) ---
 st.title(f"🚀 RAPIDITO AI - Portal Contable")
 
 with st.sidebar:
     st.header("⚙️ Panel de Control")
     
-    # 1. NUEVO INFORME
     if st.button("🧹 NUEVO INFORME", type="primary", use_container_width=True):
         st.session_state.id_proceso += 1
         st.session_state.data_compras_cache = []
@@ -427,7 +426,6 @@ with st.sidebar:
     
     st.markdown("---")
 
-    # 2. CONFIGURACIÓN MAESTRO
     if st.session_state.usuario_actual == "GABRIEL":
         st.subheader("🔑 Master Config")
         up_xls = st.file_uploader("Actualizar JSON (Excel)", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
@@ -435,11 +433,15 @@ with st.sidebar:
             df = pd.read_excel(up_xls)
             for _, r in df.iterrows():
                 nm = str(r.get("NOMBRE","")).upper().strip()
-                if nm: st.session_state.memoria["empresas"][nm] = {"DETALLE":str(r.get("DETALLE","OTROS")).upper(),"MEMO":str(r.get("MEMO","PROFESIONAL")).upper()}
-            guardar_memoria(); st.success("Memoria guardada.")
+                if nm: 
+                    st.session_state.memoria["empresas"][nm] = {
+                        "DETALLE": str(r.get("DETALLE","OTROS")).upper(),
+                        "MEMO": str(r.get("MEMO","PROFESIONAL")).upper()
+                    }
+            guardar_memoria()
+            st.success("Memoria guardada.")
         st.markdown("---")
 
-    # 3. BUZÓN DE SUGERENCIAS
     st.subheader("📬 Sugerencias")
     sug_text = st.text_area("¿Cómo podemos mejorar?", key="txt_sugerencia")
     if st.button("Enviar Sugerencia", use_container_width=True):
@@ -450,9 +452,9 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # 4. CERRAR SESIÓN
     if st.button("🚪 Cerrar Sesión", use_container_width=True):
-        st.session_state.autenticado = False; st.rerun()
+        st.session_state.autenticado = False
+        st.rerun()
 
 # --- CUERPO PRINCIPAL ---
 st.subheader("💎 Gana Meses PRO")
@@ -474,45 +476,63 @@ with tab_xml:
     with c1:
         up_c = st.file_uploader("Compras (XML o ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"c_{st.session_state.id_proceso}")
         if up_c and st.button("Procesar Compras"):
-            data = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up_c)]
+            xmls = procesar_archivos_entrada(up_c)
+            data = [extraer_datos_robusto(x) for x in xmls]
             data = [d for d in data if d and d["TIPO"] in ["FC","NC"]]
             st.session_state.data_compras_cache = data
-            st.download_button("📥 Excel Compras", generar_excel_multiexcel(data_compras=data), "Compras.xlsx")
+            st.download_button("📥 Excel Compras", generar_excel_multiexcel(data_compras=data), f"C_{datetime.now().strftime('%H%M')}.xlsx")
     with c2:
         up_v = st.file_uploader("Ventas (XML o ZIP)", type=["xml", "zip"], accept_multiple_files=True, key=f"v_{st.session_state.id_proceso}")
         if up_v and st.button("Procesar Ventas"):
-            raw = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up_v)]
+            xmls = procesar_archivos_entrada(up_v)
+            raw = [extraer_datos_robusto(x) for x in xmls]
             data = procesar_ventas_con_retenciones([d for d in raw if d])
             st.session_state.data_ventas_cache = data
-            st.download_button("📥 Excel Ventas", generar_excel_multiexcel(data_ventas_ret=data), "Ventas.xlsx")
+            st.download_button("📥 Excel Ventas", generar_excel_multiexcel(data_ventas_ret=data), f"V_{datetime.now().strftime('%H%M')}.xlsx")
 
 with tab_sri:
-    up_txt = st.file_uploader("TXT del SRI", type=["txt"])
+    # Función necesaria para las pestañas de abajo
+    def bloque_sri(titulo, tipo_filtro, key):
+        st.subheader(titulo)
+        up = st.file_uploader(f"TXT {titulo}", type=["txt"], key=key)
+        if up and st.button(f"Descargar {titulo}", key=f"btn_{key}"):
+            claves = list(dict.fromkeys(re.findall(r'\d{49}', up.read().decode("latin-1"))))
+            if claves:
+                bar = st.progress(0); lst = []
+                for i, cl in enumerate(claves):
+                    try:
+                        r = requests.post(URL_WS, data=f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.autorizacion"><soapenv:Body><ec:autorizacionComprobante><claveAccesoComprobante>{cl}</claveAccesoComprobante></ec:autorizacionComprobante></soapenv:Body></soapenv:Envelope>', headers=HEADERS_WS, verify=False, timeout=5)
+                        if "<autorizaciones>" in r.text:
+                            d = extraer_datos_robusto(io.BytesIO(r.content))
+                            if d and d["TIPO"] == tipo_filtro: lst.append(d)
+                    except: pass
+                    bar.progress((i+1)/len(claves))
+                if lst:
+                    st.success(f"✅ {len(lst)} documentos procesados.")
+                    st.download_button(f"📊 Excel {titulo}", generar_excel_multiexcel(data_sri_lista=lst), f"{titulo}.xlsx")
+                else: st.warning("No se encontraron documentos válidos.")
+
+    # El botón "Descargar Masivo" genérico
+    st.subheader("🚀 Descarga Rápida (Todo)")
+    up_txt = st.file_uploader("TXT General del SRI", type=["txt"], key="sri_general")
     if up_txt and st.button("Descargar Masivo"):
         claves = list(dict.fromkeys(re.findall(r'\d{49}', up_txt.read().decode("latin-1"))))
-        bar, lst = st.progress(0), []
-        for i, cl in enumerate(claves):
-            try:
-                r = requests.post(URL_WS, data=f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.autorizacion"><soapenv:Body><ec:autorizacionComprobante><claveAccesoComprobante>{cl}</claveAccesoComprobante></ec:autorizacionComprobante></soapenv:Body></soapenv:Envelope>', headers=HEADERS_WS, verify=False, timeout=5)
-                if "<autorizaciones>" in r.text:
-                    d = extraer_datos_robusto(io.BytesIO(r.content))
-                    if d: lst.append(d)
-            except: pass
-            bar.progress((i+1)/len(claves))
-        if lst: st.download_button("📊 Excel SRI", generar_excel_multiexcel(data_sri_lista=lst), "SRI_Masivo.xlsx")
-                if lst: 
-                    st.success(f"✅ Completado. {len(lst)} documentos.")
-                    registrar_actividad(st.session_state.usuario_actual, f"EXCEL SRI {titulo}", len(lst))
-                    c1, c2 = st.columns(2)
-                    with c1: st.download_button(f"📦 ZIP {titulo}", zip_buffer.getvalue(), f"{titulo}.zip")
-                    with c2: st.download_button(f"📊 Excel {titulo}", generar_excel_multiexcel(data_sri_lista=lst, sri_mode=tipo_filtro), f"{titulo}.xlsx")
-                else: st.warning("No se encontraron documentos.")
+        if claves:
+            bar, lst = st.progress(0), []
+            for i, cl in enumerate(claves):
+                try:
+                    r = requests.post(URL_WS, data=f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ec="http://ec.gob.sri.ws.autorizacion"><soapenv:Body><ec:autorizacionComprobante><claveAccesoComprobante>{cl}</claveAccesoComprobante></ec:autorizacionComprobante></soapenv:Body></soapenv:Envelope>', headers=HEADERS_WS, verify=False, timeout=5)
+                    if "<autorizaciones>" in r.text:
+                        d = extraer_datos_robusto(io.BytesIO(r.content))
+                        if d: lst.append(d)
+                except: pass
+                bar.progress((i+1)/len(claves))
+            if lst: 
+                st.success(f"✅ {len(lst)} documentos procesados.")
+                st.download_button("📊 Excel SRI Completo", generar_excel_multiexcel(data_sri_lista=lst), "SRI_Masivo.xlsx")
 
+    st.markdown("---")
     s1, s2, s3 = st.tabs(["Facturas", "Notas Crédito", "Retenciones"])
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
-
-
-
-
