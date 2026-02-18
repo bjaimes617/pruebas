@@ -338,6 +338,7 @@ with tab_xml:
             data = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up)]
             data = [d for d in data if d and d["TIPO"] in ["FC","NC"]]
             st.session_state.data_compras_cache = data
+            registrar_actividad(st.session_state.usuario_actual, "PROCESÓ COMPRAS MANUAL", len(data))
             st.download_button("📥 Excel Compras", generar_excel_multiexcel(data_compras=data), "Compras.xlsx")
     with m2:
         up = st.file_uploader("Ventas (XML/ZIP)", type=["xml","zip"], accept_multiple_files=True, key=f"v_{st.session_state.id_proceso}")
@@ -345,12 +346,14 @@ with tab_xml:
             raw = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up)]
             data = procesar_ventas_con_retenciones([d for d in raw if d])
             st.session_state.data_ventas_cache = data
+            registrar_actividad(st.session_state.usuario_actual, "PROCESÓ VENTAS MANUAL", len(data))
             st.download_button("📥 Excel Ventas", generar_excel_multiexcel(data_ventas_ret=data), "Ventas.xlsx")
     with m3:
         if st.button("🚀 Generar Informe Integral"):
             if st.session_state.data_compras_cache and st.session_state.data_ventas_cache:
                 st.download_button("📥 DESCARGAR INTEGRAL", generar_excel_multiexcel(st.session_state.data_compras_cache, st.session_state.data_ventas_cache), "Integral.xlsx")
             else: st.error("Falta procesar Compras y Ventas.")
+                registrar_actividad(st.session_state.usuario_actual, "GENERÓ INFORME INTEGRAL")
 
 with tab_sri:
     def bloque_sri_persistente(titulo, tipo_filtro, key):
@@ -369,6 +372,7 @@ with tab_sri:
                         except: pass
                         bar.progress((i+1)/len(claves)); status.text(f"Procesando {i+1}/{len(claves)}")
                 st.session_state.sri_results[key] = {"data": lst, "zip": zip_buf.getvalue()}
+                registrar_actividad(st.session_state.usuario_actual, f"DESCARGA SRI: {titulo}", len(lst))
         if key in st.session_state.sri_results:
             res = st.session_state.sri_results[key]
             if res["data"]:
@@ -380,5 +384,6 @@ with tab_sri:
     with s1: bloque_sri_persistente("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri_persistente("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri_persistente("Retenciones", "RET", "sri_ret")
+
 
 
