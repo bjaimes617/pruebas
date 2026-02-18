@@ -467,7 +467,7 @@ with st.sidebar:
                             st.success("¡Invitación Exitosa!")
                             
                             # LINK DE WHATSAPP
-                            texto_ws = f"f"""🎁 *¡Hola! Te tengo un regalo.*
+                            texto_ws = f"""🎁 *¡Hola! Te tengo un regalo.*
 
 Te acabo de generar un pase exclusivo para *RAPIDITO AI*. 🚀
 Olvídate de digitar facturas, esta IA lo hace por ti.
@@ -598,5 +598,6 @@ with tab_sri:
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
+
 
 
