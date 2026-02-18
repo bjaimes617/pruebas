@@ -446,7 +446,7 @@ else:
     st.warning("⛔ Agotaste tus invitaciones.")
     st.caption("Procesa más de 100 XMLs esta semana para ganar 2 pases más.")
 
-st.slidebar:
+st.markdown("---")
 if st.session_state.get("usuario_actual") == "GABRIEL":
     st.header("Master Config")
     up_xls = st.file_uploader("Cargar Excel Maestro", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
@@ -541,5 +541,6 @@ with tab_sri:
     with s1: bloque_sri("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri("Retenciones", "RET", "sri_ret")
+
 
 
