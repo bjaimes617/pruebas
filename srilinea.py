@@ -489,4 +489,5 @@ with tab_sri:
                     if d: lst.append(d)
             except: pass
             bar.progress((i+1)/len(claves))
-        if lst: st.download_button("📊 Excel SRI Completo", ge
+       if lst: st.download_button("📊 Excel SRI Completo", generar_excel_multiexcel(data_sri_lista=lst), "SRI_Masivo.xlsx")
+
