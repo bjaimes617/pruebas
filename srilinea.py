@@ -402,6 +402,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
                             f"SUMIFS('COMPRAS'!$Q:$Q,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\") + "
                             f"SUMIFS('COMPRAS'!$O:$O,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\") + "
                             f"SUMIFS('COMPRAS'!$N:$N,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\") + "
+                            f"SUMIFS('COMPRAS'!$M:$M,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\") + "                            
                             f"SUMIFS('COMPRAS'!$J:$J,'COMPRAS'!$A:$A,{l}$2,'COMPRAS'!$I:$I,\"PROFESIONAL\")", 
                             f_num)
                     else: ws_p.write(3, col, 0, f_num)
@@ -548,3 +549,4 @@ with tab_sri:
             if lst:
                 st.success("Descarga completada.")
                 st.download_button("📊 Descargar Excel SRI", generar_excel_multiexcel(data_sri_lista=lst), "SRI_Masivo.xlsx")
+
