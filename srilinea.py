@@ -353,7 +353,7 @@ with tab_xml:
             if st.session_state.data_compras_cache and st.session_state.data_ventas_cache:
                 st.download_button("📥 DESCARGAR INTEGRAL", generar_excel_multiexcel(st.session_state.data_compras_cache, st.session_state.data_ventas_cache), "Integral.xlsx")
             else: st.error("Falta procesar Compras y Ventas.")
-                registrar_actividad(st.session_state.usuario_actual, "GENERÓ INFORME INTEGRAL")
+            registrar_actividad(st.session_state.usuario_actual, "GENERÓ INFORME INTEGRAL")
 
 with tab_sri:
     def bloque_sri_persistente(titulo, tipo_filtro, key):
@@ -384,6 +384,7 @@ with tab_sri:
     with s1: bloque_sri_persistente("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri_persistente("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri_persistente("Retenciones", "RET", "sri_ret")
+
 
 
 
