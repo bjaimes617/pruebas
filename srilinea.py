@@ -336,7 +336,7 @@ with tab_xml:
     with m1:
         up = st.file_uploader("Compras (XML/ZIP)", type=["xml","zip"], accept_multiple_files=True, key=f"c_{st.session_state.id_proceso}")
         # --- NUEVA LÍNEA DE DESCRIPCIÓN ---
-        st.info("💡 **Módulo de Compras:** Sube tus facturas recibidas y notas de crédito. El sistema clasificará automáticamente tus gastos deducibles.")
+        st.info("💡 **Módulo de Compras:** Sube tus facturas recibidas y notas de crédito en formato xml o zip con xmls.  Este reporte contiene la pestaña de compras y gasto anual. El sistema clasificará automáticamente tus gastos deducibles.")
         if up and st.button("Procesar Compras"):
             data = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up)]
             data = [d for d in data if d and d["TIPO"] in ["FC","NC"]]
@@ -345,6 +345,8 @@ with tab_xml:
             st.download_button("📥 Excel Compras", generar_excel_multiexcel(data_compras=data), "Compras.xlsx")
     with m2:
         up = st.file_uploader("Ventas (XML/ZIP)", type=["xml","zip"], accept_multiple_files=True, key=f"v_{st.session_state.id_proceso}")
+        # --- NUEVA LÍNEA DE DESCRIPCIÓN ---
+        st.info("💡 **Módulo de Ventas:** Carga tus facturas emitidas y retenciones recibidas en formato xml o zip con xmls. El sistema cruzará la información usando los números de sustento.")
         if up and st.button("Procesar Ventas"):
             raw = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up)]
             data = procesar_ventas_con_retenciones([d for d in raw if d])
@@ -352,6 +354,8 @@ with tab_xml:
             registrar_actividad(st.session_state.usuario_actual, "PROCESÓ VENTAS MANUAL", len(data))
             st.download_button("📥 Excel Ventas", generar_excel_multiexcel(data_ventas_ret=data), "Ventas.xlsx")
     with m3:
+        # --- NUEVA LÍNEA DE DESCRIPCIÓN ---
+        st.info("💡 **Informe Integral:** Consumo de datos cruzados. Este reporte contiene la pestaña de compras, reporte anual, ventas y proyección. Asegúrate de haber presionado el botón de procesar compras y ventas primero para generar el reporte anual completo.")
         if st.button("🚀 Generar Informe Integral"):
             if st.session_state.data_compras_cache and st.session_state.data_ventas_cache:
                 st.download_button("📥 DESCARGAR INTEGRAL", generar_excel_multiexcel(st.session_state.data_compras_cache, st.session_state.data_ventas_cache), "Integral.xlsx")
@@ -361,6 +365,8 @@ with tab_xml:
 with tab_sri:
     def bloque_sri_persistente(titulo, tipo_filtro, key):
         st.subheader(titulo); up = st.file_uploader(f"TXT {titulo}", type=["txt"], key=f"up_{key}")
+        # --- NUEVA LÍNEA DE DESCRIPCIÓN ---
+        st.caption(f"👉 Sube el archivo TXT descargado del portal del SRI para extraer masivamente los XMLs de {titulo}.")
         if up and st.button(f"🚀 Descargar {titulo}", key=f"btn_{key}"):
             claves = list(dict.fromkeys(re.findall(r'\d{49}', up.read().decode("latin-1"))))
             if claves:
@@ -393,4 +399,5 @@ with tab_tutorial:
     st.subheader("🎥 Tutorial: Aprende a usar RAPIDITO AI")
     # st.video automáticamente carga el reproductor en grande dentro de la pestaña y permite darle play
     st.video("https://youtu.be/0iUAI3NAkww?si=aR-Xf9F-GeD1Kj1S")
+
 
