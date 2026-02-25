@@ -291,44 +291,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
     return output.getvalue()
 
 # --- 7. INTERFAZ ORGANIZADA ---
-st.title(f"🚀 RAPIDITO AI - {st.session_state.get('usuario_actual', 'Portal Contable')}")
-
-with st.sidebar:
-    st.header("⚙️ Panel de Control")
-    if st.button("🧹 NUEVO INFORME", type="primary", use_container_width=True):
-        st.session_state.id_proceso += 1
-        st.session_state.data_compras_cache, st.session_state.data_ventas_cache, st.session_state.sri_results = [], [], {}
-        st.rerun()
-    st.markdown("---")
-    if st.session_state.usuario_actual == "GABRIEL":
-        st.subheader("🔑 Master Config")
-        up_xls = st.file_uploader("Actualizar JSON", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
-        if up_xls:
-            df = pd.read_excel(up_xls); df.columns = [c.upper().strip() for c in df.columns]
-            for _, r in df.iterrows():
-                nm = str(r.get("NOMBRE","")).upper().strip()
-                if nm: st.session_state.memoria["empresas"][nm] = {"DETALLE":str(r.get("DETALLE","OTROS")).upper(),"MEMO":str(r.get("MEMO","PROFESIONAL")).upper()}
-            guardar_memoria(); st.success("Guardado.")
-    st.subheader("📬 Sugerencias")
-    sug = st.text_area("Ideas:")
-    if st.button("Enviar Sugerencia", use_container_width=True):
-        if sug: registrar_actividad(st.session_state.usuario_actual, "SUGERENCIA", sugerencia=sug); st.success("Recibido.")
-    st.markdown("---")
-    if st.button("🚪 Cerrar Sesión", use_container_width=True):
-        st.session_state.autenticado = False; st.rerun()
-
-st.subheader("💎 Mantén tu membresia gratuita invitando a 3 contadores colegas al mes")
-inv = st.session_state.invitaciones_disponibles
-if inv > 0:
-    with st.expander(f"🎁 Regalar Invitación ({inv} disponibles)"):
-        email = st.text_input("Email colega")
-        if st.button("Generar"):
-            resp = conectar_api({"accion": "INVITAR", "usuario": st.session_state.usuario_actual, "invitado": email})
-            if resp.get("exito"):
-                msg = urllib.parse.quote(f"🎁 Regalo Pase *RAPIDITO AI*.\n👤 Usuario: {email}\n🔑 Clave: Rapidito2026\n👉 https://pruebas1998.streamlit.app")
-                st.markdown(f'<a href="https://wa.me/?text={msg}" target="_blank"><button style="background-color:#25D366;color:white;width:100%;font-weight:bold;padding:10px;border-radius:8px;border:none;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
-
-tab_xml, tab_sri, tab_tutorial = st.tabs([["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (TXT)", "📺 Aprende a usarme"])
+tab_xml, tab_sri, tab_tutorial = st.tabs(["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (TXT)", "📺 Aprende a usarme"])
 
 with tab_xml:
     m1, m2, m3 = st.tabs(["🛒 Compras y NC", "💰 Ventas y Retenciones", "📑 Informe Integral"])
@@ -361,7 +324,7 @@ with tab_sri:
         if up and st.button(f"🚀 Descargar {titulo}", key=f"btn_{key}"):
             claves = list(dict.fromkeys(re.findall(r'\d{49}', up.read().decode("latin-1"))))
             if claves:
-                bar, status = st.progress(0), st.empty(); lst, zip_buf = [], io.BytesIO()
+                bar, status = st.progress(0), st.empty(); lst, zip_buf = io.BytesIO()
                 with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zf:
                     for i, cl in enumerate(claves):
                         try:
@@ -384,14 +347,9 @@ with tab_sri:
     with s1: bloque_sri_persistente("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri_persistente("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri_persistente("Retenciones", "RET", "sri_ret")
+
 # AQUI SE CONFIGURA LA NUEVA PESTAÑA CON EL VIDEO DE YOUTUBE
 with tab_tutorial:
     st.subheader("🎥 Tutorial: Aprende a usar RAPIDITO AI")
     # st.video automáticamente carga el reproductor en grande dentro de la pestaña y permite darle play
     st.video("https://youtu.be/0iUAI3NAkww?si=aR-Xf9F-GeD1Kj1S")
-
-
-
-
-
-
