@@ -335,6 +335,8 @@ with tab_xml:
     m1, m2, m3 = st.tabs(["🛒 Compras y NC", "💰 Ventas y Retenciones", "📑 Informe Integral"])
     with m1:
         up = st.file_uploader("Compras (XML/ZIP)", type=["xml","zip"], accept_multiple_files=True, key=f"c_{st.session_state.id_proceso}")
+        # --- NUEVA LÍNEA DE DESCRIPCIÓN ---
+        st.info("💡 **Módulo de Compras:** Sube tus facturas recibidas y notas de crédito. El sistema clasificará automáticamente tus gastos deducibles.")
         if up and st.button("Procesar Compras"):
             data = [extraer_datos_robusto(x) for x in procesar_archivos_entrada(up)]
             data = [d for d in data if d and d["TIPO"] in ["FC","NC"]]
@@ -391,3 +393,4 @@ with tab_tutorial:
     st.subheader("🎥 Tutorial: Aprende a usar RAPIDITO AI")
     # st.video automáticamente carga el reproductor en grande dentro de la pestaña y permite darle play
     st.video("https://youtu.be/0iUAI3NAkww?si=aR-Xf9F-GeD1Kj1S")
+
