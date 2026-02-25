@@ -366,7 +366,7 @@ with tab_sri:
     def bloque_sri_persistente(titulo, tipo_filtro, key):
         st.subheader(titulo); up = st.file_uploader(f"TXT {titulo}", type=["txt"], key=f"up_{key}")
         # --- NUEVA LÍNEA DE DESCRIPCIÓN ---
-        st.caption(f"👉 Sube el archivo TXT descargado del portal del SRI para extraer masivamente los XMLs de {titulo}.")
+        st.info(f"👉 Sube el archivo TXT descargado del portal del SRI para extraer masivamente los XMLs de {titulo}.")
         if up and st.button(f"🚀 Descargar {titulo}", key=f"btn_{key}"):
             claves = list(dict.fromkeys(re.findall(r'\d{49}', up.read().decode("latin-1"))))
             if claves:
@@ -399,6 +399,7 @@ with tab_tutorial:
     st.subheader("🎥 Tutorial: Aprende a usar RAPIDITO AI")
     # st.video automáticamente carga el reproductor en grande dentro de la pestaña y permite darle play
     st.video("https://youtu.be/0iUAI3NAkww?si=aR-Xf9F-GeD1Kj1S")
+
 
 
 
