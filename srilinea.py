@@ -328,7 +328,7 @@ if inv > 0:
                 msg = urllib.parse.quote(f"🎁 Regalo Pase *RAPIDITO AI*.\n👤 Usuario: {email}\n🔑 Clave: Rapidito2026\n👉 https://pruebas1998.streamlit.app")
                 st.markdown(f'<a href="https://wa.me/?text={msg}" target="_blank"><button style="background-color:#25D366;color:white;width:100%;font-weight:bold;padding:10px;border-radius:8px;border:none;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
 
-tab_xml, tab_sri = st.tabs(["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (TXT)"])
+tab_xml, tab_sri = st.tabs([["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (TXT)", "📺 Aprende a usarme"])
 
 with tab_xml:
     m1, m2, m3 = st.tabs(["🛒 Compras y NC", "💰 Ventas y Retenciones", "📑 Informe Integral"])
@@ -384,6 +384,12 @@ with tab_sri:
     with s1: bloque_sri_persistente("Facturas Recibidas", "FC", "sri_fc")
     with s2: bloque_sri_persistente("Notas de Crédito", "NC", "sri_nc")
     with s3: bloque_sri_persistente("Retenciones", "RET", "sri_ret")
+# AQUI SE CONFIGURA LA NUEVA PESTAÑA CON EL VIDEO DE YOUTUBE
+with tab_tutorial:
+    st.subheader("🎥 Tutorial: Aprende a usar RAPIDITO AI")
+    # st.video automáticamente carga el reproductor en grande dentro de la pestaña y permite darle play
+    st.video("https://youtu.be/0iUAI3NAkww?si=aR-Xf9F-GeD1Kj1S")
+
 
 
 
