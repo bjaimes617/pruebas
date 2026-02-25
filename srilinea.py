@@ -355,7 +355,7 @@ with tab_xml:
             st.download_button("📥 Excel Ventas", generar_excel_multiexcel(data_ventas_ret=data), "Ventas.xlsx")
     with m3:
         # --- NUEVA LÍNEA DE DESCRIPCIÓN ---
-        st.info("💡 **Informe Integral:** Consumo de datos cruzados. Este reporte contiene la pestaña de compras, reporte anual, ventas y proyección. Asegúrate de haber presionado el botón de procesar compras y ventas de las dos anteriores pestañas en orden primero para generar el reporte anual completo.")
+        st.info("💡 **Informe Integral:** Consumo de datos cruzados. Este reporte contiene la pestaña de compras, reporte anual, ventas y proyección. Asegúrate de haber presionado primero el botón de procesar compras y ventas de las dos anteriores pestañas en orden para generar el reporte anual completo.")
         if st.button("🚀 Generar Informe Integral"):
             if st.session_state.data_compras_cache and st.session_state.data_ventas_cache:
                 st.download_button("📥 DESCARGAR INTEGRAL", generar_excel_multiexcel(st.session_state.data_compras_cache, st.session_state.data_ventas_cache), "Integral.xlsx")
@@ -399,6 +399,7 @@ with tab_tutorial:
     st.subheader("🎥 Tutorial: Aprende a usar RAPIDITO AI")
     # st.video automáticamente carga el reproductor en grande dentro de la pestaña y permite darle play
     st.video("https://youtu.be/0iUAI3NAkww?si=aR-Xf9F-GeD1Kj1S")
+
 
 
 
