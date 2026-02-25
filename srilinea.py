@@ -291,6 +291,44 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
     return output.getvalue()
 
 # --- 7. INTERFAZ ORGANIZADA ---
+st.title(f"🚀 RAPIDITO AI - {st.session_state.get('usuario_actual', 'Portal Contable')}")
+
+with st.sidebar:
+    st.header("⚙️ Panel de Control")
+    if st.button("🧹 NUEVO INFORME", type="primary", use_container_width=True):
+        st.session_state.id_proceso += 1
+        st.session_state.data_compras_cache, st.session_state.data_ventas_cache, st.session_state.sri_results = [], [], {}
+        st.rerun()
+    st.markdown("---")
+    if st.session_state.usuario_actual == "GABRIEL":
+        st.subheader("🔑 Master Config")
+        up_xls = st.file_uploader("Actualizar JSON", type=["xlsx"], key=f"mst_{st.session_state.id_proceso}")
+        if up_xls:
+            df = pd.read_excel(up_xls); df.columns = [c.upper().strip() for c in df.columns]
+            for _, r in df.iterrows():
+                nm = str(r.get("NOMBRE","")).upper().strip()
+                if nm: st.session_state.memoria["empresas"][nm] = {"DETALLE":str(r.get("DETALLE","OTROS")).upper(),"MEMO":str(r.get("MEMO","PROFESIONAL")).upper()}
+            guardar_memoria(); st.success("Guardado.")
+    st.subheader("📬 Sugerencias")
+    sug = st.text_area("Ideas:")
+    if st.button("Enviar Sugerencia", use_container_width=True):
+        if sug: registrar_actividad(st.session_state.usuario_actual, "SUGERENCIA", sugerencia=sug); st.success("Recibido.")
+    st.markdown("---")
+    if st.button("🚪 Cerrar Sesión", use_container_width=True):
+        st.session_state.autenticado = False; st.rerun()
+
+st.subheader("💎 Mantén tu membresia gratuita invitando a 3 contadores colegas al mes")
+inv = st.session_state.invitaciones_disponibles
+if inv > 0:
+    with st.expander(f"🎁 Regalar Invitación ({inv} disponibles)"):
+        email = st.text_input("Email colega")
+        if st.button("Generar"):
+            resp = conectar_api({"accion": "INVITAR", "usuario": st.session_state.usuario_actual, "invitado": email})
+            if resp.get("exito"):
+                msg = urllib.parse.quote(f"🎁 Regalo Pase *RAPIDITO AI*.\n👤 Usuario: {email}\n🔑 Clave: Rapidito2026\n👉 https://pruebas1998.streamlit.app")
+                st.markdown(f'<a href="https://wa.me/?text={msg}" target="_blank"><button style="background-color:#25D366;color:white;width:100%;font-weight:bold;padding:10px;border-radius:8px;border:none;">📲 WhatsApp</button></a>', unsafe_allow_html=True)
+
+# AQUI SE CREA LA TERCERA PESTAÑA: "📺 Aprende a usarme"
 tab_xml, tab_sri, tab_tutorial = st.tabs(["📂 Subir XMLs (Manual/ZIP)", "📡 Descarga SRI (TXT)", "📺 Aprende a usarme"])
 
 with tab_xml:
