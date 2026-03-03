@@ -370,7 +370,7 @@ with tab_sri:
         if up and st.button(f"🚀 Descargar {titulo}", key=f"btn_{key}"):
             claves = list(dict.fromkeys(re.findall(r'\d{49}', up.read().decode("latin-1"))))
             if claves:
-                bar, status = st.progress(0), st.empty(); lst, zip_buf = io.BytesIO()
+                bar, status = st.progress(0), st.empty(); lst, zip_buf = [], io.BytesIO()
                 with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zf:
                     for i, cl in enumerate(claves):
                         try:
@@ -399,6 +399,7 @@ with tab_tutorial:
     st.subheader("🎥 Tutorial: Aprende a usar RAPIDITO AI")
     # st.video automáticamente carga el reproductor en grande dentro de la pestaña y permite darle play
     st.video("https://youtu.be/0iUAI3NAkww?si=aR-Xf9F-GeD1Kj1S")
+
 
 
 
