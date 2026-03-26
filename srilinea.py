@@ -13,18 +13,18 @@ import xlsxwriter
 import time
 import urllib.parse
 
-# --- 1. CONFIGURACIÓN Y SEGURIDAD ---
+# --- 1. CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="RAPIDITO AI - Portal Contable", layout="wide", page_icon="📊")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Endpoints y Configuración
 URL_WS = "https://cel.sri.gob.ec/comprobantes-electronicos-ws/AutorizacionComprobantesOffline?wsdl"
 HEADERS_WS = {"Content-Type": "text/xml;charset=UTF-8","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"}
-URL_API_VIRAL = "https://script.google.com/macros/s/AKfycbz3vRq203m7vcdor30hJiXuAGNGr8n_kM2dCpf63LW4KhaeY9wqAijBC473AwywYes/exec" 
+URL_API_VIRAL = "https://script.google.com/macros/s/AKfycbzTqGeo2uygPVUYNfIk8MmCj9659sOON6di7ZkGDn6kQPw2z173c-EOaRUXaYV2udyB/exec" 
 
-# --- CONEXIÓN API ---
+# --- FUNCIONES DE SOPORTE ---
 def conectar_api(payload):
     try:
-        if "TU_URL" in URL_API_VIRAL: return {"exito": False, "mensaje": "Configurar URL_API_VIRAL"}
         r = requests.post(URL_API_VIRAL, json=payload, timeout=10)
         return r.json()
     except: return {"exito": False, "mensaje": "Error de conexión"}
@@ -37,24 +37,66 @@ def registrar_actividad(usuario, accion, cantidad=None, sugerencia=None):
     try: requests.post(URL_LOGGING, json=payload, timeout=5); return True
     except: return False
 
-# --- 2. SISTEMA DE ESTADO ---
+# --- 2. GESTIÓN DE ESTADO Y LOGIN ---
 if "autenticado" not in st.session_state: st.session_state.autenticado = False
-if "id_proceso" not in st.session_state: st.session_state.id_proceso = 0
+if "es_premium" not in st.session_state: st.session_state.es_premium = False
+if "invitaciones_disponibles" not in st.session_state: st.session_state.invitaciones_disponibles = 0
 if "data_compras_cache" not in st.session_state: st.session_state.data_compras_cache = []
 if "data_ventas_cache" not in st.session_state: st.session_state.data_ventas_cache = []
-if "invitaciones_disponibles" not in st.session_state: st.session_state.invitaciones_disponibles = 0
 if "sri_results" not in st.session_state: st.session_state.sri_results = {}
+if "id_proceso" not in st.session_state: st.session_state.id_proceso = 0
 
 if not st.session_state.autenticado:
     st.sidebar.title("🔐 Acceso RAPIDITO")
-    u, p = st.sidebar.text_input("Usuario"), st.sidebar.text_input("Clave", type="password")
-    if st.sidebar.button("Entrar"):
+    u = st.sidebar.text_input("Usuario")
+    p = st.sidebar.text_input("Clave", type="password")
+    if st.sidebar.button("Entrar", use_container_width=True):
         resp = conectar_api({"accion": "LOGIN", "usuario": u.strip(), "clave": p.strip()})
         if resp.get("exito"):
-            st.session_state.autenticado, st.session_state.usuario_actual = True, u.strip()
+            st.session_state.autenticado = True
+            st.session_state.usuario_actual = u.strip()
             st.session_state.invitaciones_disponibles = resp.get("invitaciones", 0)
-            registrar_actividad(u, "LOGIN"); st.rerun()
+            st.session_state.es_premium = resp.get("premium", False)
+            st.rerun()
         else: st.sidebar.error("Credenciales incorrectas")
+    st.stop()
+
+# --- 3. LA PARED DE BLOQUEO (PAYWALL) ---
+if not st.session_state.es_premium and st.session_state.invitaciones_disponibles > 0:
+    st.title("🚧 ACCESO RESTRINGIDO")
+    st.error(f"### Lo sentimos, {st.session_state.usuario_actual}")
+    st.markdown(f"Para desbloquear el sistema, debes agotar tus **{st.session_state.invitaciones_disponibles} invitaciones** mensuales o adquirir la versión Premium. Invita a tus colegas o contadores conocidos. Después de agotar tus invitaciones oprime F5 y vuelve a ingresar")
+    
+    col_w1, col_w2 = st.columns(2)
+    
+    with col_w1:
+        st.subheader("🎁 Versión Gratuita")
+        email_inv = st.text_input("Correo del colega:", placeholder="colega@ejemplo.com")
+        if st.button("ENVIAR INVITACIÓN AHORA", type="primary", use_container_width=True):
+            if email_inv:
+                resp = conectar_api({"accion": "INVITAR", "usuario": st.session_state.usuario_actual, "invitado": email_inv})
+                if resp.get("exito"):
+                    st.success("¡Invitación registrada!")
+                    msg_wa = urllib.parse.quote(f"🎁 Regalo Pase *RAPIDITO AI*.\n👤 Usuario: {email_inv}\n🔑 Clave: Rapidito2026\n👉 Entra aquí: https://pruebas1998.streamlit.app")
+                    st.markdown(f'''
+                        <a href="https://wa.me/?text={msg_wa}" target="_blank">
+                            <button style="background-color:#25D366;color:white;width:100%;font-weight:bold;padding:15px;border-radius:10px;border:none;cursor:pointer;">
+                                📲 CLIC AQUÍ PARA ENVIAR POR WHATSAPP Y ENTRAR
+                            </button>
+                        </a>
+                    ''', unsafe_allow_html=True)
+            else: st.error("Ingresa un correo.")
+
+    with col_w2:
+        st.subheader("👑 Versión Premium")
+        with st.expander("💎 VER VALOR Y DATOS DE PAGO", expanded=True):
+            st.markdown(f"""
+            ### 💰 Costo: $20 / Año
+            **Transferencia Bancaria (Ecuador):**
+            * **Banco:** Banco Pichincha (Ahorros) 2205082283
+            * **Beneficiario:** Gabriel  Jácome 
+            * **Enviar el comprobante al siguiente whatsapp para la activación** 0982258418
+            """)
     st.stop()
 
 # --- 3. MEMORIA JSON ---
@@ -399,6 +441,7 @@ with tab_tutorial:
     st.subheader("🎥 Tutorial: Aprende a usar RAPIDITO AI")
     # st.video automáticamente carga el reproductor en grande dentro de la pestaña y permite darle play
     st.video("https://youtu.be/0iUAI3NAkww?si=aR-Xf9F-GeD1Kj1S")
+
 
 
 
