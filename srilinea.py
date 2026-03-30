@@ -57,6 +57,10 @@ if not st.session_state.autenticado:
             st.session_state.usuario_actual = u.strip()
             st.session_state.invitaciones_disponibles = resp.get("invitaciones", 0)
             st.session_state.es_premium = resp.get("premium", False)
+            
+            # ---> AQUÍ AGREGAMOS EL REGISTRO DE LA ACTIVIDAD DEL LOGIN <---
+            registrar_actividad(st.session_state.usuario_actual, "LOGIN EXITOSO")
+            
             st.rerun()
         else: st.sidebar.error("Credenciales incorrectas")
     st.stop()
