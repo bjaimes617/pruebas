@@ -14,7 +14,7 @@ import time
 import urllib.parse
 
 # --- 1. CONFIGURACIÓN INICIAL ---
-st.set_page_config(page_title="RAPIDITO AI - Portal Contable", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Portal Contable", layout="wide", page_icon="📊")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Endpoints y Configuración
@@ -47,7 +47,7 @@ if "sri_results" not in st.session_state: st.session_state.sri_results = {}
 if "id_proceso" not in st.session_state: st.session_state.id_proceso = 0
 
 if not st.session_state.autenticado:
-    st.sidebar.title("🔐 Acceso RAPIDITO")
+    st.sidebar.title("🔐 Acceso A Tu Portal Contable")
     u = st.sidebar.text_input("Usuario")
     p = st.sidebar.text_input("Clave", type="password")
     if st.sidebar.button("Entrar", use_container_width=True):
@@ -337,7 +337,7 @@ def generar_excel_multiexcel(data_compras=None, data_ventas_ret=None, data_sri_l
     return output.getvalue()
 
 # --- 7. INTERFAZ ORGANIZADA ---
-st.title(f"🚀 RAPIDITO AI - {st.session_state.get('usuario_actual', 'Portal Contable')}")
+st.title(f"🚀 Tu Portal Contable - {st.session_state.get('usuario_actual', 'Portal Contable')}")
 
 with st.sidebar:
     st.header("⚙️ Panel de Control")
